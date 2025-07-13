@@ -105,7 +105,7 @@ const defaultFail = `t.Fatalf("test not implemented")`
 
 const Template = `
 func {{ .Name }}(t *testing.T) {
-	t.Run("Adding positive numbers", func(t *testing.T) {
+	t.Run("{{ .Name }}_0", func(t *testing.T) {
 		// delete this after your implementation
 		{{ .DefaultFail }}
 		{{ .FuncData.PrintDefaultReturns }} := {{ .FuncData.Name }}({{ .FuncData.PrintDefaultArgs }})
