@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -43,6 +44,7 @@ func TestTestGeneration(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected generated tests to fail")
 	}
+	fmt.Println(string(testOutput))
 
 	type testAction struct {
 		Action string
@@ -63,6 +65,9 @@ func TestTestGeneration(t *testing.T) {
 	runTests := make(map[string]string)
 	nRan := 0
 	for _, ta := range testActions {
+		if ta.Action == "build-fail" {
+			t.Fatal("tests did not compile")
+		}
 		if ta.Action == "output" {
 			continue
 		}
@@ -77,6 +82,9 @@ func TestTestGeneration(t *testing.T) {
 	}
 
 	t.Logf("%d tests ran\n", nRan)
+	if nRan == 0 {
+		t.Fatal("no generated test were ran")
+	}
 
 	if len(runTests) != nRan {
 		t.Logf("recoded action: %+v", testActions)

@@ -1,6 +1,10 @@
 package test
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/moritz-tiesler/fmock"
+)
 
 func add(a, b int) int {
 	return a + b
@@ -9,6 +13,10 @@ func add(a, b int) int {
 func useStringsBuilder(sb strings.Builder) string {
 	sb.WriteString("touch")
 	return sb.String()
+}
+
+func useFmock(a fmock.Mock) bool {
+	return a.Called()
 }
 
 type Adder struct{}

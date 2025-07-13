@@ -301,10 +301,21 @@ func listPackageFuncs(pkgPath string) ([]FuncInfo, string) {
 									fInfo.Params = append(fInfo.Params, ParamInfo{TypeName: paramTypeName, ZeroValue: zeroVal})
 								} else {
 									for _, name := range field.Names {
-										pInfo := ParamInfo{Name: name.Name, TypeName: paramTypeName, ZeroValue: zeroVal}
-										prefix := extractPackagePrefix(paramTypeName)
+										pInfo := ParamInfo{Name: name.Name, ZeroValue: zeroVal}
+										prefix, pkgId, shortName := extractPackagePrefix(paramTypeName)
+										if prefix != "" {
+											pInfo.TypeName = prefix + "." + shortName
+										} else {
+											pInfo.TypeName = shortName
+										}
 										if prefix != "" && prefix != pkgName {
-											pInfo.ImportedFrom = prefix
+											if pkgId != "" {
+												// third party
+												pInfo.ImportedFrom = pkgId + "/" + prefix
+											} else {
+												pInfo.ImportedFrom = prefix
+											}
+											pInfo.ZeroValue = pInfo.TypeName + "{}"
 										}
 										fInfo.Params = append(fInfo.Params, pInfo)
 									}
@@ -352,13 +363,18 @@ func getSimplifiedTypeName(qualifiedType string) string {
 	return typeName
 }
 
-func extractPackagePrefix(typeName string) string {
+func extractPackagePrefix(typeName string) (string, string, string) {
+	typeName = strings.TrimPrefix(typeName, "*")
 	var prefix string
 	parts := strings.Split(typeName, "/")
 	last := max(0, len(parts)-1)
-	pre, _, cut := strings.Cut(parts[last], ".")
+	pre, shortName, cut := strings.Cut(parts[last], ".")
 	if cut {
 		prefix = pre
 	}
-	return prefix
+	var packageId string
+	if last > 0 {
+		packageId = strings.Join(parts[:last], "/")
+	}
+	return prefix, packageId, shortName
 }
