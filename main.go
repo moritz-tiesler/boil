@@ -3,46 +3,67 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"go/ast"
+	"go/types"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"text/template"
+
+	"golang.org/x/tools/go/packages"
 )
 
 func main() {
 	fmt.Println("Hello, World")
-	tt := TestTemplateData{
-		Name: "TestAdd",
-		FuncData: FuncData{
-			Name: "add",
-			ArgsNames: map[string]reflect.Type{
-				"a": reflect.TypeFor[int32](),
-				"b": reflect.TypeFor[int32](),
-			},
-			Args:    []reflect.Type{reflect.TypeFor[int32](), reflect.TypeFor[int32]()},
-			Returns: []reflect.Type{reflect.TypeFor[int32]()},
-		},
-		Table: false,
+	pkgPath, _ := os.Getwd()
+	fmt.Println("CWD: " + pkgPath)
+	funcInfos, pkgName := listPackageFuncs(pkgPath)
+	templdatas := []TestTemplateData{}
+	for _, fi := range funcInfos {
+		templData := TestTemplateData{
+			Name: fmt.Sprintf("Test%s%s",
+				strings.ToUpper(fi.Name[:1]),
+				strings.ToUpper(fi.Name[1:]),
+			),
+			FuncInfo: fi,
+			Table:    false,
+		}
+		templdatas = append(templdatas, templData)
 	}
 
 	tmpl, err := template.New("TestFunction").Parse(Template)
 	if err != nil {
 		panic(err)
 	}
+
 	var buf bytes.Buffer
-	buf.WriteString(fmt.Sprintf("package %s\n\nimport \"testing\"\n\n", tt.FuncData.Name))
-	if err := tmpl.Execute(&buf, tt); err != nil {
+	buf.WriteString(fmt.Sprintf("package %s\n\nimport \"testing\"\n\n", pkgName))
+	if err != nil {
 		panic(err)
 	}
 
-	err = os.WriteFile("add/add_test.go", buf.Bytes(), 0644)
+	for _, td := range templdatas {
+		if err := tmpl.Execute(&buf, td); err != nil {
+			panic(err)
+		}
+
+	}
+
+	outString := buf.String()
+
+	outFileName := pkgName + "_test.go"
+	outPath := filepath.Join(pkgPath, outFileName)
+	fmt.Println("outpath: ", outPath)
+	err = os.WriteFile(outFileName, []byte(outString), 0644)
+
 	if err != nil {
 		panic(err)
 	}
 }
 
 type TestTemplateData struct {
-	FuncData FuncData
+	FuncInfo FuncInfo
 	Name     string
 	Table    bool
 }
@@ -51,28 +72,88 @@ func (td TestTemplateData) DefaultFail() string {
 	return defaultFail
 }
 
-type FuncData struct {
-	Name      string
-	ArgsNames map[string]reflect.Type
-	Args      []reflect.Type
-	Returns   []reflect.Type
+type Arg struct {
+	Type       reflect.Type
+	IsStruct   bool
+	IsUserDecl bool
 }
 
-func (fd FuncData) PrintDefaultArgs() string {
+func (arg Arg) PrintDefaultCtor() string {
+	if arg.IsStruct {
+		return fmt.Sprintf("%s{}", arg.Type.Name())
+	}
+	if arg.Type.Kind() == reflect.Ptr {
+		return fmt.Sprintf("&%s{}", arg.Type.Name())
+	}
+	if arg.IsUserDecl {
+		return fmt.Sprintf("%s(%s)", arg.Type.Name(), reflect.Zero(arg.Type))
+	}
+	return ""
+}
+
+type FuncInfo struct {
+	Name          string
+	IsExported    bool
+	ReceiverType  string // Fully qualified type string (e.g., "myproject.com/mymodule/mypackage.MyStruct")
+	ReceiverShort string
+	Params        []ParamInfo
+	Returns       []ParamInfo // For Go, return values are also like parameters
+}
+
+type ParamInfo struct {
+	Name      string
+	TypeName  string // Fully qualified type string (e.g., "string", "io.Reader")
+	ZeroValue string // Go code for the zero value (e.g., `""`, `0`, `nil`)
+}
+
+func generateZeroValue(typ types.Type) string {
+	switch t := typ.(type) {
+	case *types.Basic:
+		switch t.Kind() {
+		case types.Bool:
+			return "false"
+		case types.Int, types.Int8, types.Int16, types.Int32, types.Int64:
+			return "0"
+		case types.Uint, types.Uint8, types.Uint16, types.Uint32, types.Uint64, types.Uintptr:
+			return "0"
+		case types.Float32, types.Float64:
+			return "0.0"
+		case types.Complex64, types.Complex128:
+			return "(0 + 0i)"
+		case types.String:
+			return `""`
+		default: // e.g., types.UnsafePointer
+			return "nil"
+		}
+	case *types.Pointer, *types.Interface, *types.Map, *types.Chan, *types.Slice, *types.Signature:
+		return "nil"
+	case *types.Struct:
+		// For structs, return an empty composite literal: "pkg.StructType{}"
+		return t.String() + "{}"
+	case *types.Array:
+		// For arrays, return an empty composite literal: "[N]Type{}"
+		return t.String() + "{}"
+	default:
+		// Fallback for any other complex type, often nil or its type name followed by {}
+		// For named types, t.String() gives the fully qualified name.
+		return t.String() + "{}" // This might not be perfect for all cases, but generally works.
+	}
+}
+
+func (fi FuncInfo) PrintDefaultArgs() string {
 	args := []byte{}
 	written := 0
-	for _, argType := range fd.Args {
+	for _, arg := range fi.Params {
 		if written > 0 {
 			args = fmt.Append(args, ", ")
 		}
-		zero := reflect.Zero(argType)
-		args = fmt.Appendf(args, "%v", zero)
+		args = fmt.Appendf(args, "%v", arg.ZeroValue)
 		written++
 	}
 	return string(args)
 }
 
-func (fd FuncData) PrintDefaultReturns() string {
+func (fd FuncInfo) PrintDefaultReturns() string {
 	returnNames := ""
 	for i := range fd.Returns {
 		if i > 0 {
@@ -83,7 +164,23 @@ func (fd FuncData) PrintDefaultReturns() string {
 	return returnNames
 }
 
-func (fd FuncData) PrintDefaultExpects() string {
+func (fi FuncInfo) PrintReceiverCtor() string {
+	ctor := ""
+	if fi.ReceiverType == "" {
+		return ctor
+	}
+	fmt.Println(fi)
+	return fmt.Sprintf("receiver := %s{}", fi.ReceiverShort)
+}
+
+func (fi FuncInfo) PrintCall() string {
+	if fi.ReceiverType == "" {
+		return fi.Name
+	}
+	return fmt.Sprintf("receiver.%s", fi.Name)
+}
+
+func (fd FuncInfo) PrintDefaultExpects() string {
 	const tmpl = `
 		%s := %v
 		if %s != %s {
@@ -93,7 +190,7 @@ func (fd FuncData) PrintDefaultExpects() string {
 	var expects strings.Builder
 	for i, retType := range fd.Returns {
 		expectName := fmt.Sprintf("expect%d", i)
-		expectZero := reflect.Zero(retType)
+		expectZero := retType.ZeroValue
 		resultName := fmt.Sprintf("result%d", i)
 		s := fmt.Sprintf(tmpl, expectName, expectZero, resultName, expectName, expectName, resultName)
 		expects.WriteString(s)
@@ -108,8 +205,9 @@ func {{ .Name }}(t *testing.T) {
 	t.Run("{{ .Name }}_0", func(t *testing.T) {
 		// delete this after your implementation
 		{{ .DefaultFail }}
-		{{ .FuncData.PrintDefaultReturns }} := {{ .FuncData.Name }}({{ .FuncData.PrintDefaultArgs }})
-		{{ .FuncData.PrintDefaultExpects }}
+		{{ .FuncInfo.PrintReceiverCtor }}
+		{{ .FuncInfo.PrintDefaultReturns }} := {{ .FuncInfo.PrintCall }}({{ .FuncInfo.PrintDefaultArgs }})
+		{{ .FuncInfo.PrintDefaultExpects }}
 	})
 }
 `
@@ -132,3 +230,111 @@ func {{ .Name }}(t *testing.T) {
 		})
 	}
 `
+
+func listPackageFuncs(pkgPath string) ([]FuncInfo, string) {
+
+	var funcsToTest []FuncInfo
+	var pkgName string
+	cfg := &packages.Config{
+		Mode: packages.NeedName |
+			packages.NeedFiles |
+			packages.NeedTypes |
+			packages.NeedSyntax |
+			packages.NeedTypesInfo,
+	}
+
+	pkgs, err := packages.Load(cfg, pkgPath)
+	if err != nil {
+		panic(err)
+	}
+
+	if len(pkgs) != 1 {
+		panic("expected one pkg")
+	}
+
+	if packages.PrintErrors(pkgs) > 0 {
+		panic("packages containged errors")
+	}
+
+	for _, pkg := range pkgs {
+		fmt.Printf("Package: %s (ID: %s)\n", pkg.Name, pkg.ID)
+		pkgName = pkg.Name
+		for _, file := range pkg.Syntax {
+			fset := pkg.Fset
+			fName := fset.Position(file.Pos()).Filename
+			if strings.HasSuffix(fName, "_test.go") {
+				continue
+			}
+			fmt.Printf("  File: %s\n", fName)
+			ast.Inspect(file, func(n ast.Node) bool {
+				if funcDecl, ok := n.(*ast.FuncDecl); ok {
+					fInfo := FuncInfo{
+						Name: funcDecl.Name.Name,
+					}
+
+					// check if func has receiver
+					if funcDecl.Recv != nil && len(funcDecl.Recv.List) > 0 {
+						recvTypeExpr := funcDecl.Recv.List[0].Type
+						if typ := pkg.TypesInfo.TypeOf(recvTypeExpr); typ != nil {
+							fInfo.ReceiverType = typ.String()
+							fInfo.ReceiverShort = getSimplifiedTypeName(typ.String())
+						} else {
+							fInfo.ReceiverType = "UNKNOWN_RECEIVER_TYPE"
+						}
+					}
+
+					// check params
+					if funcDecl.Type.Params != nil {
+						for _, field := range funcDecl.Type.Params.List {
+							if typ := pkg.TypesInfo.TypeOf(field.Type); typ != nil {
+								paramTypeName := typ.String()
+								zeroVal := generateZeroValue(typ)
+								if len(field.Names) == 0 { // Unnamed parameter
+									fInfo.Params = append(fInfo.Params, ParamInfo{TypeName: paramTypeName, ZeroValue: zeroVal})
+								} else {
+									for _, name := range field.Names {
+										fInfo.Params = append(fInfo.Params, ParamInfo{Name: name.Name, TypeName: paramTypeName, ZeroValue: zeroVal})
+									}
+								}
+							} else {
+								fInfo.Params = append(fInfo.Params, ParamInfo{Name: "UNKNOWN_PARAMETER_TYPE", TypeName: "UNKNOWN_PARAMETER_TYPE"})
+							}
+
+						}
+					}
+
+					if funcDecl.Type.Results != nil {
+						for _, field := range funcDecl.Type.Results.List {
+							if typ := pkg.TypesInfo.TypeOf(field.Type); typ != nil {
+								// Get the fully qualified type name for the return value
+								returnTypeName := typ.String()
+								zeroVal := generateZeroValue(typ)
+								if len(field.Names) == 0 { // Unnamed return value
+									fInfo.Returns = append(fInfo.Returns, ParamInfo{TypeName: returnTypeName, ZeroValue: zeroVal})
+								} else {
+									for _, name := range field.Names {
+										fInfo.Returns = append(fInfo.Returns, ParamInfo{Name: name.Name, TypeName: returnTypeName, ZeroValue: zeroVal})
+									}
+								}
+							} else {
+								fInfo.Returns = append(fInfo.Returns, ParamInfo{Name: "UNKNOWN_RETURN_TYPE", TypeName: "UNKNOWN_RETURN_TYPE"})
+							}
+						}
+					}
+					funcsToTest = append(funcsToTest, fInfo)
+				}
+				return true
+			})
+		}
+
+	}
+	return funcsToTest, pkgName
+
+}
+
+func getSimplifiedTypeName(qualifiedType string) string {
+	parts := strings.Split(qualifiedType, "/")
+
+	_, typeName, _ := strings.Cut(parts[len(parts)-1], ".")
+	return typeName
+}
