@@ -6,7 +6,6 @@ import (
 	"go/ast"
 	"go/types"
 	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"text/template"
@@ -15,9 +14,7 @@ import (
 )
 
 func main() {
-	fmt.Println("Hello, World")
 	pkgPath, _ := os.Getwd()
-	fmt.Println("CWD: " + pkgPath)
 	funcInfos, pkgName := listPackageFuncs(pkgPath)
 	templdatas := []TestTemplateData{}
 	for _, fi := range funcInfos {
@@ -53,8 +50,6 @@ func main() {
 	outString := buf.String()
 
 	outFileName := pkgName + "_test.go"
-	outPath := filepath.Join(pkgPath, outFileName)
-	fmt.Println("outpath: ", outPath)
 	err = os.WriteFile(outFileName, []byte(outString), 0644)
 
 	if err != nil {
@@ -169,7 +164,6 @@ func (fi FuncInfo) PrintReceiverCtor() string {
 	if fi.ReceiverType == "" {
 		return ctor
 	}
-	fmt.Println(fi)
 	return fmt.Sprintf("receiver := %s{}", fi.ReceiverShort)
 }
 
@@ -257,7 +251,6 @@ func listPackageFuncs(pkgPath string) ([]FuncInfo, string) {
 	}
 
 	for _, pkg := range pkgs {
-		fmt.Printf("Package: %s (ID: %s)\n", pkg.Name, pkg.ID)
 		pkgName = pkg.Name
 		for _, file := range pkg.Syntax {
 			fset := pkg.Fset
@@ -265,7 +258,6 @@ func listPackageFuncs(pkgPath string) ([]FuncInfo, string) {
 			if strings.HasSuffix(fName, "_test.go") {
 				continue
 			}
-			fmt.Printf("  File: %s\n", fName)
 			ast.Inspect(file, func(n ast.Node) bool {
 				if funcDecl, ok := n.(*ast.FuncDecl); ok {
 					fInfo := FuncInfo{
