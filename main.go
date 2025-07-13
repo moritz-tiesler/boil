@@ -13,6 +13,7 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+// todo return num of generated tests
 func main() {
 	pkgPath, _ := os.Getwd()
 	funcInfos, pkgName := listPackageFuncs(pkgPath)
