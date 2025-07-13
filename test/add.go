@@ -1,7 +1,14 @@
 package test
 
+import "strings"
+
 func add(a, b int) int {
 	return a + b
+}
+
+func useStringsBuilder(sb strings.Builder) string {
+	sb.WriteString("touch")
+	return sb.String()
 }
 
 type Adder struct{}

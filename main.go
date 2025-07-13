@@ -21,7 +21,7 @@ func main() {
 		templData := TestTemplateData{
 			Name: fmt.Sprintf("Test%s%s",
 				strings.ToUpper(fi.Name[:1]),
-				strings.ToUpper(fi.Name[1:]),
+				fi.Name[1:],
 			),
 			FuncInfo: fi,
 			Table:    false,
@@ -34,11 +34,22 @@ func main() {
 		panic(err)
 	}
 
-	var buf bytes.Buffer
-	buf.WriteString(fmt.Sprintf("package %s\n\nimport \"testing\"\n\n", pkgName))
-	if err != nil {
-		panic(err)
+	extraImports := []string{}
+	for _, fi := range funcInfos {
+		for _, pi := range fi.Params {
+			if pi.ImportedFrom != "" {
+				extraImports = append(extraImports, pi.ImportedFrom)
+			}
+		}
 	}
+	var buf bytes.Buffer
+	buf.WriteString(fmt.Sprintf("package %s\n\n", pkgName))
+
+	buf.WriteString("import \"testing\"\n")
+	for _, ei := range extraImports {
+		buf.WriteString(fmt.Sprintf("import \"%s\"\n", ei))
+	}
+	buf.WriteString("\n")
 
 	for _, td := range templdatas {
 		if err := tmpl.Execute(&buf, td); err != nil {
@@ -93,12 +104,14 @@ type FuncInfo struct {
 	ReceiverShort string
 	Params        []ParamInfo
 	Returns       []ParamInfo // For Go, return values are also like parameters
+	ImportedFrom  string
 }
 
 type ParamInfo struct {
-	Name      string
-	TypeName  string // Fully qualified type string (e.g., "string", "io.Reader")
-	ZeroValue string // Go code for the zero value (e.g., `""`, `0`, `nil`)
+	Name         string
+	TypeName     string // Fully qualified type string (e.g., "string", "io.Reader")
+	ZeroValue    string // Go code for the zero value (e.g., `""`, `0`, `nil`)
+	ImportedFrom string
 }
 
 func generateZeroValue(typ types.Type) string {
@@ -227,8 +240,6 @@ func {{ .Name }}(t *testing.T) {
 
 func listPackageFuncs(pkgPath string) ([]FuncInfo, string) {
 
-	var funcsToTest []FuncInfo
-	var pkgName string
 	cfg := &packages.Config{
 		Mode: packages.NeedName |
 			packages.NeedFiles |
@@ -250,6 +261,9 @@ func listPackageFuncs(pkgPath string) ([]FuncInfo, string) {
 		panic("packages containged errors")
 	}
 
+	var funcsToTest []FuncInfo
+	var pkgName string
+
 	for _, pkg := range pkgs {
 		pkgName = pkg.Name
 		for _, file := range pkg.Syntax {
@@ -269,7 +283,8 @@ func listPackageFuncs(pkgPath string) ([]FuncInfo, string) {
 						recvTypeExpr := funcDecl.Recv.List[0].Type
 						if typ := pkg.TypesInfo.TypeOf(recvTypeExpr); typ != nil {
 							fInfo.ReceiverType = typ.String()
-							fInfo.ReceiverShort = getSimplifiedTypeName(typ.String())
+							short := getSimplifiedTypeName(typ.String())
+							fInfo.ReceiverShort = short
 						} else {
 							fInfo.ReceiverType = "UNKNOWN_RECEIVER_TYPE"
 						}
@@ -285,7 +300,12 @@ func listPackageFuncs(pkgPath string) ([]FuncInfo, string) {
 									fInfo.Params = append(fInfo.Params, ParamInfo{TypeName: paramTypeName, ZeroValue: zeroVal})
 								} else {
 									for _, name := range field.Names {
-										fInfo.Params = append(fInfo.Params, ParamInfo{Name: name.Name, TypeName: paramTypeName, ZeroValue: zeroVal})
+										pInfo := ParamInfo{Name: name.Name, TypeName: paramTypeName, ZeroValue: zeroVal}
+										prefix := extractPackagePrefix(paramTypeName)
+										if prefix != "" && prefix != pkgName {
+											pInfo.ImportedFrom = prefix
+										}
+										fInfo.Params = append(fInfo.Params, pInfo)
 									}
 								}
 							} else {
@@ -329,4 +349,15 @@ func getSimplifiedTypeName(qualifiedType string) string {
 
 	_, typeName, _ := strings.Cut(parts[len(parts)-1], ".")
 	return typeName
+}
+
+func extractPackagePrefix(typeName string) string {
+	var prefix string
+	parts := strings.Split(typeName, "/")
+	last := max(0, len(parts)-1)
+	pre, _, cut := strings.Cut(parts[last], ".")
+	if cut {
+		prefix = pre
+	}
+	return prefix
 }
