@@ -69,6 +69,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	fmt.Printf("Created file %s\n", outFileName)
+	fmt.Printf("Created %d tests\n", len(templdatas))
 	goFmt(outFileName)
 }
 
