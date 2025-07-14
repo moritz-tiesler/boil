@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/types"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"text/template"
@@ -269,10 +270,12 @@ func listPackageFuncs(pkgPath string) PackageInfo {
 	cfg := &packages.Config{
 		Mode: packages.NeedName |
 			packages.NeedFiles |
+			packages.LoadFiles |
 			packages.NeedTypes |
 			packages.NeedSyntax |
 			packages.NeedImports |
 			packages.NeedModule |
+			packages.NeedCompiledGoFiles |
 			packages.NeedTypesInfo,
 	}
 
@@ -292,6 +295,7 @@ func listPackageFuncs(pkgPath string) PackageInfo {
 	pkgInfo := PackageInfo{}
 
 	for _, pkg := range pkgs {
+		fmt.Println("pkg errors:", pkg.Errors)
 		if pkg.Module != nil {
 			pkgInfo.ModuleName = pkg.Module.Path
 			pkgInfo.PackageIsMain = pkg.Module.Main
@@ -397,4 +401,42 @@ func extractPackagePrefix(typeName string) (string, string, string) {
 	fmt.Println("packagId: ", packageId)
 	fmt.Println("shortName", shortName)
 	return prefix, packageId, shortName
+}
+
+func isStandardLibrary(pkg *packages.Package, goroot string) bool {
+	if len(pkg.GoFiles) == 0 {
+		// If there are no Go files, it's unlikely a compilable standard library package.
+		// Some pseudo-packages might have no GoFiles, but usually they are not
+		// direct dependencies one would check.
+		return false
+	}
+
+	// Construct the expected standard library source path
+	stdLibSrcPrefix := filepath.Join(goroot, "src")
+
+	// Check if any of the package's Go files are located within GOROOT/src
+	for _, goFile := range pkg.GoFiles {
+		// Clean the file path to handle potential "../" or other non-canonical forms
+		cleanGoFile := filepath.Clean(goFile)
+
+		// Check if the file path has the GOROOT/src prefix
+		if strings.HasPrefix(cleanGoFile, stdLibSrcPrefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func getGOROOT() (string, error) {
+	goroot := os.Getenv("GOROOT")
+	if goroot == "" {
+		// As a fallback, if GOROOT is not set, runtime.GOROOT() gives the default.
+		// However, for packages.Load context, os.Getenv is more direct.
+		// For robustness, let's just stick to os.Getenv for now.
+		// If GOROOT is truly unset, Go might infer it, but for explicit checks,
+		// relying on the env var or a known installation path is best.
+		// For the purpose of this example, we'll assume it's set or inferrable.
+		return "", fmt.Errorf("GOROOT environment variable is not set")
+	}
+	return filepath.Clean(goroot), nil
 }
