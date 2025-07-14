@@ -32,18 +32,10 @@ func main() {
 		templdatas = append(templdatas, templData)
 	}
 
-	fmt.Println("module: ", pkgInfo.ModuleName)
-	fmt.Println("is main: ", pkgInfo.PackageIsMain)
-	fmt.Println("package path: ", pkgInfo.Path)
-	fmt.Println("package name: ", pkgInfo.Name)
-	for _, im := range pkgInfo.Imports {
-		fmt.Println("import: ", im.PkgPath)
-	}
 	extraImports := []string{}
 	for _, fi := range pkgInfo.Funcs {
 		for _, pi := range fi.Params {
 			if pi.ImportedFrom != "" {
-				fmt.Println("found extra import: ", pi.ImportedFrom)
 				extraImports = append(extraImports, pi.ImportedFrom)
 			}
 		}
@@ -56,13 +48,6 @@ func main() {
 	if err := importTempl.Execute(&buf, pkgInfo); err != nil {
 		panic(err)
 	}
-	// buf.WriteString(fmt.Sprintf("package %s\n\n", pkgInfo.Name))
-
-	// buf.WriteString("import \"testing\"\n")
-	// for _, ei := range extraImports {
-	// 	fmt.Printf("Adding import \"%s\"\n", ei)
-	// 	buf.WriteString(fmt.Sprintf("import \"%s\"\n", ei))
-	// }
 	buf.WriteString("\n")
 
 	funcTestTempl, err := template.New("TestFunction").Parse(Template)
@@ -144,18 +129,21 @@ func (pi *PackageInfo) Add(fi *FuncInfo) {
 			if ri == pi.ModuleName {
 				continue
 			}
+			if ri == pi.ModuleName+"/"+pi.Name {
+				continue
+			}
 			// typePath
 			pkg, ok := pi.Imports[ri]
 			if !ok {
-				panic(fmt.Sprintf("req=%s not found in %+v", ri, pi.Imports))
+				fmt.Printf("moduleName=%s, required pkg=%s, currentpkg=%s\n", pi.ModuleName, ri, pi.Name)
+				fmt.Printf("req=%s not found in %+v\n", ri, pi.Imports)
+				panic("bad")
 			}
 			pi.MustPrintImports[ri] = pkg
 		}
 	}
 
-	fmt.Println("pi.path: ", pi.Path)
 	for _, param := range fi.Params {
-		fmt.Println("old zero: ", param.ZeroValue)
 		a, b, isPtr := strings.Cut(param.ZeroValue, "*")
 		var shortZero string
 		if isPtr {
@@ -183,10 +171,8 @@ func (pi *PackageInfo) Add(fi *FuncInfo) {
 		} else {
 			param.ZeroValue = shortZero
 		}
-		fmt.Println("new zero: ", param.ZeroValue)
 	}
 	for _, ret := range fi.Returns {
-		fmt.Println("old zero: ", ret.ZeroValue)
 		a, b, isPtr := strings.Cut(ret.ZeroValue, "*")
 		var shortZero string
 		if isPtr {
@@ -204,11 +190,8 @@ func (pi *PackageInfo) Add(fi *FuncInfo) {
 		}
 		shortZero = strings.TrimPrefix(shortZero, ".")
 		if prependPgk {
-			fmt.Printf("prepending: %s\n", shortZero)
 			pkgs := strings.Split(ret.ImportedFrom, "/")
-			fmt.Printf("pkgs: %v\n", pkgs)
 			shortZero = pkgs[len(pkgs)-1] + "." + shortZero
-			fmt.Printf("became %s\n", shortZero)
 		}
 		shortZero = strings.TrimPrefix(shortZero, pi.Path)
 		shortZero = strings.TrimPrefix(shortZero, ".")
@@ -217,7 +200,6 @@ func (pi *PackageInfo) Add(fi *FuncInfo) {
 		} else {
 			ret.ZeroValue = shortZero
 		}
-		fmt.Println("new zero: ", ret.ZeroValue)
 	}
 
 	pi.Funcs = append(pi.Funcs, *fi)
@@ -455,7 +437,6 @@ func listPackageFuncs(pkgPath string) PackageInfo {
 	}
 
 	for _, pkg := range pkgs {
-		fmt.Println("pkg errors:", pkg.Errors)
 		if pkg.Module != nil {
 			pkgInfo.ModuleName = pkg.Module.Path
 			pkgInfo.PackageIsMain = pkg.Module.Main
@@ -568,7 +549,6 @@ func getSimplifiedTypeName(qualifiedType string) string {
 }
 
 func extractPackagePrefix(typeName string) (string, string, string) {
-	fmt.Println("extracting from: ", typeName)
 	typeName = strings.TrimPrefix(typeName, "*")
 	var prefix string
 	parts := strings.Split(typeName, "/")
@@ -581,9 +561,6 @@ func extractPackagePrefix(typeName string) (string, string, string) {
 	if last > 0 {
 		packageId = strings.Join(parts[:last], "/")
 	}
-	fmt.Println("prefix: ", prefix)
-	fmt.Println("packagId: ", packageId)
-	fmt.Println("shortName", shortName)
 	return prefix, packageId, shortName
 }
 
@@ -620,7 +597,6 @@ func getGOROOT() (string, error) {
 		return "", fmt.Errorf("failed to read GOOROOT environment variable")
 	}
 	goroot := string(out)
-	fmt.Println("GOROOT: ", goroot)
 	if goroot == "" {
 		return "", fmt.Errorf("GOROOT environment variable is not set")
 	}

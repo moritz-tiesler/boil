@@ -25,6 +25,10 @@ func (adder *Adder) Do(a, b int) int {
 	return add(a, b)
 }
 
+func createAdder() *Adder {
+	return &Adder{}
+}
+
 func callAdder(addr *Adder, a, b int) int {
 	return addr.Do(a, b)
 }
