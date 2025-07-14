@@ -20,7 +20,7 @@ func main() {
 	pkgPath, _ := os.Getwd()
 	pkgInfo := listPackageFuncs(pkgPath)
 	templdatas := []TestTemplateData{}
-	for _, fi := range pkgInfo.Funcs {
+	for _, fi := range pkgInfo.TestableFuncs() {
 		templData := TestTemplateData{
 			Name: fmt.Sprintf("Test%s%s",
 				strings.ToUpper(fi.Name[:1]),
@@ -124,6 +124,17 @@ type PackageInfo struct {
 	MustPrintImports map[string]*packages.Package
 	Funcs            []FuncInfo
 	goRoot           string
+}
+
+func (pi PackageInfo) TestableFuncs() []FuncInfo {
+	funcInfo := []FuncInfo{}
+	for _, fi := range pi.Funcs {
+		if fi.Name == "init" {
+			continue
+		}
+		funcInfo = append(funcInfo, fi)
+	}
+	return funcInfo
 }
 
 func (pi *PackageInfo) Add(fi *FuncInfo) {
