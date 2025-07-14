@@ -16,9 +16,9 @@ import (
 // todo return num of generated tests
 func main() {
 	pkgPath, _ := os.Getwd()
-	funcInfos, pkgName := listPackageFuncs(pkgPath)
+	pkgInfo := listPackageFuncs(pkgPath)
 	templdatas := []TestTemplateData{}
-	for _, fi := range funcInfos {
+	for _, fi := range pkgInfo.Funcs {
 		templData := TestTemplateData{
 			Name: fmt.Sprintf("Test%s%s",
 				strings.ToUpper(fi.Name[:1]),
@@ -35,19 +35,24 @@ func main() {
 		panic(err)
 	}
 
+	fmt.Println("module: ", pkgInfo.ModuleName)
+	fmt.Println("is main: ", pkgInfo.PackageIsMain)
+	fmt.Println("package: ", pkgInfo.Name)
 	extraImports := []string{}
-	for _, fi := range funcInfos {
+	for _, fi := range pkgInfo.Funcs {
 		for _, pi := range fi.Params {
 			if pi.ImportedFrom != "" {
+				fmt.Println("found extra import: ", pi.ImportedFrom)
 				extraImports = append(extraImports, pi.ImportedFrom)
 			}
 		}
 	}
 	var buf bytes.Buffer
-	buf.WriteString(fmt.Sprintf("package %s\n\n", pkgName))
+	buf.WriteString(fmt.Sprintf("package %s\n\n", pkgInfo.Name))
 
 	buf.WriteString("import \"testing\"\n")
 	for _, ei := range extraImports {
+		fmt.Printf("Adding import \"%s\"\n", ei)
 		buf.WriteString(fmt.Sprintf("import \"%s\"\n", ei))
 	}
 	buf.WriteString("\n")
@@ -61,7 +66,7 @@ func main() {
 
 	outString := buf.String()
 
-	outFileName := pkgName + "_test.go"
+	outFileName := pkgInfo.Name + "_test.go"
 	err = os.WriteFile(outFileName, []byte(outString), 0644)
 
 	if err != nil {
@@ -96,6 +101,20 @@ func (arg Arg) PrintDefaultCtor() string {
 		return fmt.Sprintf("%s(%s)", arg.Type.Name(), reflect.Zero(arg.Type))
 	}
 	return ""
+}
+
+type PackageInfo struct {
+	ModuleName       string
+	PackageIsMain    bool
+	Name             string
+	Imports          map[string]*packages.Package
+	MustPrintImports map[string]*packages.Package
+	Funcs            []FuncInfo
+}
+
+func (pi *PackageInfo) Add(fi *FuncInfo) {
+
+	pi.Funcs = append(pi.Funcs, *fi)
 }
 
 type FuncInfo struct {
@@ -239,13 +258,15 @@ func {{ .Name }}(t *testing.T) {
 	}
 `
 
-func listPackageFuncs(pkgPath string) ([]FuncInfo, string) {
+func listPackageFuncs(pkgPath string) PackageInfo {
 
 	cfg := &packages.Config{
 		Mode: packages.NeedName |
 			packages.NeedFiles |
 			packages.NeedTypes |
 			packages.NeedSyntax |
+			packages.NeedImports |
+			packages.NeedModule |
 			packages.NeedTypesInfo,
 	}
 
@@ -262,11 +283,20 @@ func listPackageFuncs(pkgPath string) ([]FuncInfo, string) {
 		panic("packages containged errors")
 	}
 
-	var funcsToTest []FuncInfo
 	var pkgName string
+	var imports map[string]*packages.Package
+
+	pkgInfo := PackageInfo{}
 
 	for _, pkg := range pkgs {
+		if pkg.Module != nil {
+			pkgInfo.ModuleName = pkg.Module.Path
+			pkgInfo.PackageIsMain = pkg.Module.Main
+		}
+		imports = pkg.Imports
 		pkgName = pkg.Name
+		pkgInfo.Imports = imports
+		pkgInfo.Name = pkgName
 		for _, file := range pkg.Syntax {
 			fset := pkg.Fset
 			fName := fset.Position(file.Pos()).Filename
@@ -301,23 +331,7 @@ func listPackageFuncs(pkgPath string) ([]FuncInfo, string) {
 									fInfo.Params = append(fInfo.Params, ParamInfo{TypeName: paramTypeName, ZeroValue: zeroVal})
 								} else {
 									for _, name := range field.Names {
-										pInfo := ParamInfo{Name: name.Name, ZeroValue: zeroVal}
-										prefix, pkgId, shortName := extractPackagePrefix(paramTypeName)
-										if prefix != "" {
-											pInfo.TypeName = prefix + "." + shortName
-										} else {
-											pInfo.TypeName = shortName
-										}
-										if prefix != "" && prefix != pkgName {
-											if pkgId != "" {
-												// third party
-												pInfo.ImportedFrom = pkgId + "/" + prefix
-											} else {
-												pInfo.ImportedFrom = prefix
-											}
-											pInfo.ZeroValue = pInfo.TypeName + "{}"
-										}
-										fInfo.Params = append(fInfo.Params, pInfo)
+										fInfo.Params = append(fInfo.Params, ParamInfo{Name: name.Name, TypeName: paramTypeName, ZeroValue: zeroVal})
 									}
 								}
 							} else {
@@ -345,14 +359,14 @@ func listPackageFuncs(pkgPath string) ([]FuncInfo, string) {
 							}
 						}
 					}
-					funcsToTest = append(funcsToTest, fInfo)
+					pkgInfo.Add(&fInfo)
 				}
 				return true
 			})
 		}
 
 	}
-	return funcsToTest, pkgName
+	return pkgInfo
 
 }
 
@@ -364,6 +378,7 @@ func getSimplifiedTypeName(qualifiedType string) string {
 }
 
 func extractPackagePrefix(typeName string) (string, string, string) {
+	fmt.Println("extracting from: ", typeName)
 	typeName = strings.TrimPrefix(typeName, "*")
 	var prefix string
 	parts := strings.Split(typeName, "/")
@@ -376,5 +391,8 @@ func extractPackagePrefix(typeName string) (string, string, string) {
 	if last > 0 {
 		packageId = strings.Join(parts[:last], "/")
 	}
+	fmt.Println("prefix: ", prefix)
+	fmt.Println("packagId: ", packageId)
+	fmt.Println("shortName", shortName)
 	return prefix, packageId, shortName
 }
