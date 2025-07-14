@@ -37,7 +37,11 @@ func main() {
 
 	fmt.Println("module: ", pkgInfo.ModuleName)
 	fmt.Println("is main: ", pkgInfo.PackageIsMain)
-	fmt.Println("package: ", pkgInfo.Name)
+	fmt.Println("package path: ", pkgInfo.Path)
+	fmt.Println("package name: ", pkgInfo.Name)
+	for _, im := range pkgInfo.Imports {
+		fmt.Println("import: ", im.PkgPath)
+	}
 	extraImports := []string{}
 	for _, fi := range pkgInfo.Funcs {
 		for _, pi := range fi.Params {
@@ -106,6 +110,7 @@ func (arg Arg) PrintDefaultCtor() string {
 type PackageInfo struct {
 	ModuleName       string
 	PackageIsMain    bool
+	Path             string
 	Name             string
 	Imports          map[string]*packages.Package
 	MustPrintImports map[string]*packages.Package
@@ -283,9 +288,6 @@ func listPackageFuncs(pkgPath string) PackageInfo {
 		panic("packages containged errors")
 	}
 
-	var pkgName string
-	var imports map[string]*packages.Package
-
 	pkgInfo := PackageInfo{}
 
 	for _, pkg := range pkgs {
@@ -293,10 +295,9 @@ func listPackageFuncs(pkgPath string) PackageInfo {
 			pkgInfo.ModuleName = pkg.Module.Path
 			pkgInfo.PackageIsMain = pkg.Module.Main
 		}
-		imports = pkg.Imports
-		pkgName = pkg.Name
-		pkgInfo.Imports = imports
-		pkgInfo.Name = pkgName
+		pkgInfo.Imports = pkg.Imports
+		pkgInfo.Name = pkg.Name
+		pkgInfo.Path = pkg.PkgPath
 		for _, file := range pkg.Syntax {
 			fset := pkg.Fset
 			fName := fset.Position(file.Pos()).Filename
