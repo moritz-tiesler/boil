@@ -339,7 +339,7 @@ func (fi FuncInfo) PrintCall() string {
 func (fd FuncInfo) PrintDefaultExpects() string {
 	const tmpl = `
 		var %s %s
-		if %s != %s {
+		if !reflect.DeepEqual(%s, %s) {
 			t.Errorf("Expected %%v, got %%v", %s, %s)
 		}
 	`
@@ -368,6 +368,7 @@ const TemplateImports = `package {{ .Name }}
 
 import (
 	"testing"
+	"reflect"
 	{{ .PrintImports }}
 )
 `
