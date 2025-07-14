@@ -69,6 +69,13 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	goFmt(outFileName)
+}
+
+func goFmt(path string) error {
+	cmd := exec.Command("gofmt", "-w", path)
+
+	return cmd.Run()
 }
 
 type TestTemplateData struct {
