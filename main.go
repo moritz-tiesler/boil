@@ -214,7 +214,7 @@ func (fi FuncInfo) PrintCall() string {
 
 func (fd FuncInfo) PrintDefaultExpects() string {
 	const tmpl = `
-		%s := %v
+		var %s %s
 		if %s != %s {
 			t.Errorf("Expected %%v, got %%v", %s, %s)
 		}
@@ -222,9 +222,10 @@ func (fd FuncInfo) PrintDefaultExpects() string {
 	var expects strings.Builder
 	for i, retType := range fd.Returns {
 		expectName := fmt.Sprintf("expect%d", i)
-		expectZero := retType.ZeroValue
+		expcectType := retType.TypeName
+		// expectZero := retType.ZeroValue
 		resultName := fmt.Sprintf("result%d", i)
-		s := fmt.Sprintf(tmpl, expectName, expectZero, resultName, expectName, expectName, resultName)
+		s := fmt.Sprintf(tmpl, expectName, expcectType, resultName, expectName, expectName, resultName)
 		expects.WriteString(s)
 	}
 	return expects.String()
