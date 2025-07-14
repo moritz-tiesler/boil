@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/types"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -31,11 +32,6 @@ func main() {
 		templdatas = append(templdatas, templData)
 	}
 
-	tmpl, err := template.New("TestFunction").Parse(Template)
-	if err != nil {
-		panic(err)
-	}
-
 	fmt.Println("module: ", pkgInfo.ModuleName)
 	fmt.Println("is main: ", pkgInfo.PackageIsMain)
 	fmt.Println("package path: ", pkgInfo.Path)
@@ -53,17 +49,28 @@ func main() {
 		}
 	}
 	var buf bytes.Buffer
-	buf.WriteString(fmt.Sprintf("package %s\n\n", pkgInfo.Name))
-
-	buf.WriteString("import \"testing\"\n")
-	for _, ei := range extraImports {
-		fmt.Printf("Adding import \"%s\"\n", ei)
-		buf.WriteString(fmt.Sprintf("import \"%s\"\n", ei))
+	importTempl, err := template.New("TestImports").Parse(TemplateImports)
+	if err != nil {
+		panic(err)
 	}
+	if err := importTempl.Execute(&buf, pkgInfo); err != nil {
+		panic(err)
+	}
+	// buf.WriteString(fmt.Sprintf("package %s\n\n", pkgInfo.Name))
+
+	// buf.WriteString("import \"testing\"\n")
+	// for _, ei := range extraImports {
+	// 	fmt.Printf("Adding import \"%s\"\n", ei)
+	// 	buf.WriteString(fmt.Sprintf("import \"%s\"\n", ei))
+	// }
 	buf.WriteString("\n")
 
+	funcTestTempl, err := template.New("TestFunction").Parse(Template)
+	if err != nil {
+		panic(err)
+	}
 	for _, td := range templdatas {
-		if err := tmpl.Execute(&buf, td); err != nil {
+		if err := funcTestTempl.Execute(&buf, td); err != nil {
 			panic(err)
 		}
 
@@ -116,11 +123,107 @@ type PackageInfo struct {
 	Imports          map[string]*packages.Package
 	MustPrintImports map[string]*packages.Package
 	Funcs            []FuncInfo
+	goRoot           string
 }
 
 func (pi *PackageInfo) Add(fi *FuncInfo) {
+	requiredImport := fi.RequiredImports()
+	if len(pi.Imports) > 0 {
+		for _, ri := range requiredImport {
+			if ri == pi.ModuleName {
+				continue
+			}
+			// typePath
+			pkg, ok := pi.Imports[ri]
+			if !ok {
+				panic(fmt.Sprintf("req=%s not found in %+v", ri, pi.Imports))
+			}
+			pi.MustPrintImports[ri] = pkg
+		}
+	}
+
+	fmt.Println("pi.path: ", pi.Path)
+	for _, param := range fi.Params {
+		fmt.Println("old zero: ", param.ZeroValue)
+		a, b, isPtr := strings.Cut(param.ZeroValue, "*")
+		var shortZero string
+		if isPtr {
+			shortZero = b
+		} else {
+			shortZero = a
+		}
+
+		for path := range pi.Imports {
+			shortZero = strings.TrimPrefix(shortZero, path)
+		}
+		prependPgk := false
+		if strings.HasPrefix(shortZero, ".") {
+			prependPgk = true
+		}
+		shortZero = strings.TrimPrefix(shortZero, ".")
+		if prependPgk {
+			pkgs := strings.Split(param.ImportedFrom, "/")
+			shortZero = pkgs[len(pkgs)-1] + "." + shortZero
+		}
+		shortZero = strings.TrimPrefix(shortZero, pi.Path)
+		shortZero = strings.TrimPrefix(shortZero, ".")
+		if isPtr {
+			param.ZeroValue = "*" + shortZero
+		} else {
+			param.ZeroValue = shortZero
+		}
+		fmt.Println("new zero: ", param.ZeroValue)
+	}
+	for _, ret := range fi.Returns {
+		fmt.Println("old zero: ", ret.ZeroValue)
+		a, b, isPtr := strings.Cut(ret.ZeroValue, "*")
+		var shortZero string
+		if isPtr {
+			shortZero = b
+		} else {
+			shortZero = a
+		}
+
+		for path := range pi.Imports {
+			shortZero = strings.TrimPrefix(shortZero, path)
+		}
+		prependPgk := false
+		if strings.HasPrefix(shortZero, ".") {
+			prependPgk = true
+		}
+		shortZero = strings.TrimPrefix(shortZero, ".")
+		if prependPgk {
+			fmt.Printf("prepending: %s\n", shortZero)
+			pkgs := strings.Split(ret.ImportedFrom, "/")
+			fmt.Printf("pkgs: %v\n", pkgs)
+			shortZero = pkgs[len(pkgs)-1] + "." + shortZero
+			fmt.Printf("became %s\n", shortZero)
+		}
+		shortZero = strings.TrimPrefix(shortZero, pi.Path)
+		shortZero = strings.TrimPrefix(shortZero, ".")
+		if isPtr {
+			ret.ZeroValue = "*" + shortZero
+		} else {
+			ret.ZeroValue = shortZero
+		}
+		fmt.Println("new zero: ", ret.ZeroValue)
+	}
 
 	pi.Funcs = append(pi.Funcs, *fi)
+}
+
+func (pi PackageInfo) PrintImports() string {
+	var sb strings.Builder
+	for name, pkg := range pi.MustPrintImports {
+		var importStr string
+		if isStandardLibrary(pkg, pi.goRoot) {
+			importStr = strings.TrimPrefix(pi.goRoot, name)
+		} else {
+			importStr = name
+		}
+		sb.WriteString(fmt.Sprintf("\"%s\"\n", importStr))
+	}
+	return sb.String()
 }
 
 type FuncInfo struct {
@@ -128,9 +231,26 @@ type FuncInfo struct {
 	IsExported    bool
 	ReceiverType  string // Fully qualified type string (e.g., "myproject.com/mymodule/mypackage.MyStruct")
 	ReceiverShort string
-	Params        []ParamInfo
-	Returns       []ParamInfo // For Go, return values are also like parameters
+	Params        []*ParamInfo
+	Returns       []*ParamInfo // For Go, return values are also like parameters
 	ImportedFrom  string
+}
+
+func (fi FuncInfo) RequiredImports() []string {
+	var required []string
+	for _, p := range fi.Params {
+		if p.ImportedFrom != "" {
+			required = append(required, p.ImportedFrom)
+		}
+
+	}
+	for _, p := range fi.Returns {
+		if p.ImportedFrom != "" {
+			required = append(required, p.ImportedFrom)
+		}
+
+	}
+	return required
 }
 
 type ParamInfo struct {
@@ -175,16 +295,16 @@ func generateZeroValue(typ types.Type) string {
 }
 
 func (fi FuncInfo) PrintDefaultArgs() string {
-	args := []byte{}
+	var args strings.Builder
 	written := 0
 	for _, arg := range fi.Params {
 		if written > 0 {
-			args = fmt.Append(args, ", ")
+			args.WriteString(", ")
 		}
-		args = fmt.Appendf(args, "%v", arg.ZeroValue)
+		args.WriteString(arg.Name)
 		written++
 	}
-	return string(args)
+	return args.String()
 }
 
 func (fd FuncInfo) PrintDefaultReturns() string {
@@ -194,6 +314,9 @@ func (fd FuncInfo) PrintDefaultReturns() string {
 			returnNames += ", "
 		}
 		returnNames += fmt.Sprintf("result%d", i)
+	}
+	if len(fd.Returns) > 0 {
+		returnNames += ":="
 	}
 	return returnNames
 }
@@ -223,14 +346,31 @@ func (fd FuncInfo) PrintDefaultExpects() string {
 	var expects strings.Builder
 	for i, retType := range fd.Returns {
 		expectName := fmt.Sprintf("expect%d", i)
-		expcectType := retType.TypeName
-		// expectZero := retType.ZeroValue
+		// expcectType := retType.TypeName
+		expectType := retType.ZeroValue
 		resultName := fmt.Sprintf("result%d", i)
-		s := fmt.Sprintf(tmpl, expectName, expcectType, resultName, expectName, expectName, resultName)
+		s := fmt.Sprintf(tmpl, expectName, expectType, resultName, expectName, expectName, resultName)
 		expects.WriteString(s)
 	}
 	return expects.String()
 }
+
+func (fd FuncInfo) PrintDefaultVarArgs() string {
+	var sb strings.Builder
+	for _, param := range fd.Params {
+		def := fmt.Sprintf("var %s %s\n", param.Name, param.ZeroValue)
+		sb.WriteString(def)
+	}
+	return sb.String()
+}
+
+const TemplateImports = `package {{ .Name }}
+
+import (
+	"testing"
+	{{ .PrintImports }}
+)
+`
 
 const defaultFail = `t.Fatalf("test not implemented")`
 
@@ -240,7 +380,8 @@ func {{ .Name }}(t *testing.T) {
 		// delete this after your implementation
 		{{ .DefaultFail }}
 		{{ .FuncInfo.PrintReceiverCtor }}
-		{{ .FuncInfo.PrintDefaultReturns }} := {{ .FuncInfo.PrintCall }}({{ .FuncInfo.PrintDefaultArgs }})
+		{{ .FuncInfo.PrintDefaultVarArgs }}
+		{{ .FuncInfo.PrintDefaultReturns }} {{ .FuncInfo.PrintCall }}({{ .FuncInfo.PrintDefaultArgs }})
 		{{ .FuncInfo.PrintDefaultExpects }}
 	})
 }
@@ -267,6 +408,10 @@ func {{ .Name }}(t *testing.T) {
 
 func listPackageFuncs(pkgPath string) PackageInfo {
 
+	goroot, err := getGOROOT()
+	if err != nil {
+		panic(err)
+	}
 	cfg := &packages.Config{
 		Mode: packages.NeedName |
 			packages.NeedFiles |
@@ -292,7 +437,10 @@ func listPackageFuncs(pkgPath string) PackageInfo {
 		panic("packages containged errors")
 	}
 
-	pkgInfo := PackageInfo{}
+	pkgInfo := PackageInfo{
+		goRoot:           goroot,
+		MustPrintImports: make(map[string]*packages.Package),
+	}
 
 	for _, pkg := range pkgs {
 		fmt.Println("pkg errors:", pkg.Errors)
@@ -332,16 +480,31 @@ func listPackageFuncs(pkgPath string) PackageInfo {
 						for _, field := range funcDecl.Type.Params.List {
 							if typ := pkg.TypesInfo.TypeOf(field.Type); typ != nil {
 								paramTypeName := typ.String()
-								zeroVal := generateZeroValue(typ)
+								zeroVal := paramTypeName
+								var importedFrom string
+								prefix, pkgId, _ := extractPackagePrefix(paramTypeName)
+								if pkgId != "" {
+									importedFrom = pkgId + "/" + prefix
+								} else if prefix != "" {
+									importedFrom = prefix
+								} else {
+									importedFrom = ""
+								}
 								if len(field.Names) == 0 { // Unnamed parameter
-									fInfo.Params = append(fInfo.Params, ParamInfo{TypeName: paramTypeName, ZeroValue: zeroVal})
+									fInfo.Params = append(
+										fInfo.Params,
+										&ParamInfo{TypeName: paramTypeName, ZeroValue: zeroVal, ImportedFrom: importedFrom},
+									)
 								} else {
 									for _, name := range field.Names {
-										fInfo.Params = append(fInfo.Params, ParamInfo{Name: name.Name, TypeName: paramTypeName, ZeroValue: zeroVal})
+										fInfo.Params = append(
+											fInfo.Params,
+											&ParamInfo{Name: name.Name, TypeName: paramTypeName, ZeroValue: zeroVal, ImportedFrom: importedFrom},
+										)
 									}
 								}
 							} else {
-								fInfo.Params = append(fInfo.Params, ParamInfo{Name: "UNKNOWN_PARAMETER_TYPE", TypeName: "UNKNOWN_PARAMETER_TYPE"})
+								fInfo.Params = append(fInfo.Params, &ParamInfo{Name: "UNKNOWN_PARAMETER_TYPE", TypeName: "UNKNOWN_PARAMETER_TYPE"})
 							}
 
 						}
@@ -352,16 +515,25 @@ func listPackageFuncs(pkgPath string) PackageInfo {
 							if typ := pkg.TypesInfo.TypeOf(field.Type); typ != nil {
 								// Get the fully qualified type name for the return value
 								returnTypeName := typ.String()
-								zeroVal := generateZeroValue(typ)
+								zeroVal := returnTypeName
+								var importedFrom string
+								prefix, pkgId, _ := extractPackagePrefix(returnTypeName)
+								if pkgId != "" {
+									importedFrom = pkgId + "/" + prefix
+								} else if prefix != "" {
+									importedFrom = prefix
+								} else {
+									importedFrom = ""
+								}
 								if len(field.Names) == 0 { // Unnamed return value
-									fInfo.Returns = append(fInfo.Returns, ParamInfo{TypeName: returnTypeName, ZeroValue: zeroVal})
+									fInfo.Returns = append(fInfo.Returns, &ParamInfo{TypeName: returnTypeName, ZeroValue: zeroVal, ImportedFrom: importedFrom})
 								} else {
 									for _, name := range field.Names {
-										fInfo.Returns = append(fInfo.Returns, ParamInfo{Name: name.Name, TypeName: returnTypeName, ZeroValue: zeroVal})
+										fInfo.Returns = append(fInfo.Returns, &ParamInfo{Name: name.Name, TypeName: returnTypeName, ZeroValue: zeroVal, ImportedFrom: importedFrom})
 									}
 								}
 							} else {
-								fInfo.Returns = append(fInfo.Returns, ParamInfo{Name: "UNKNOWN_RETURN_TYPE", TypeName: "UNKNOWN_RETURN_TYPE"})
+								fInfo.Returns = append(fInfo.Returns, &ParamInfo{Name: "UNKNOWN_RETURN_TYPE", TypeName: "UNKNOWN_RETURN_TYPE"})
 							}
 						}
 					}
@@ -428,14 +600,16 @@ func isStandardLibrary(pkg *packages.Package, goroot string) bool {
 }
 
 func getGOROOT() (string, error) {
-	goroot := os.Getenv("GOROOT")
+	// goroot := os.Getenv("GOROOT")
+
+	cmd := exec.Command("go", "env", "GOROOT")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to read GOOROOT environment variable")
+	}
+	goroot := string(out)
+	fmt.Println("GOROOT: ", goroot)
 	if goroot == "" {
-		// As a fallback, if GOROOT is not set, runtime.GOROOT() gives the default.
-		// However, for packages.Load context, os.Getenv is more direct.
-		// For robustness, let's just stick to os.Getenv for now.
-		// If GOROOT is truly unset, Go might infer it, but for explicit checks,
-		// relying on the env var or a known installation path is best.
-		// For the purpose of this example, we'll assume it's set or inferrable.
 		return "", fmt.Errorf("GOROOT environment variable is not set")
 	}
 	return filepath.Clean(goroot), nil
