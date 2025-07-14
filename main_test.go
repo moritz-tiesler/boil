@@ -98,9 +98,7 @@ func TestTestGeneration(t *testing.T) {
 		}
 		nFail++
 	}
+	clear()
 	t.Logf("%d tests failed\n", nRan)
-	// 	{"Time":"2025-07-13T21:34:58.164318375+02:00","Action":"fail","Package":"github.com/moritz-tiesler/tscaff/test","Test":"TestADD","Elapsed":0}
-	// {"Time":"2025-07-13T21:34:58.164321512+02:00","Action":"run","Package":"github.com/moritz-tiesler/tscaff/test","Test":"TestDO"}
-	// {"Time":"2025-07-13T21:34:58.164323228+02:00","Action":"output","Package":"github.com/moritz-tiesler/tscaff/test","Test":"TestDO","Output":"=== RUN   TestDO\n"}
 
 }
