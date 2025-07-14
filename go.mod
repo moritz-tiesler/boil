@@ -1,4 +1,4 @@
-module github.com/moritz-tiesler/tscaff
+module github.com/moritz-tiesler/boil
 
 go 1.24.4
 
