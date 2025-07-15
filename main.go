@@ -19,7 +19,9 @@ import (
 func main() {
 	pkgPath, _ := os.Getwd()
 	pkgInfo := listPackageFuncs(pkgPath)
+
 	templdatas := []TestTemplateData{}
+	var genericsDetected bool
 	for _, fi := range pkgInfo.TestableFuncs() {
 		templData := TestTemplateData{
 			Name: fmt.Sprintf("Test%s%s",
@@ -30,6 +32,10 @@ func main() {
 			Table:    false,
 		}
 		templdatas = append(templdatas, templData)
+
+		if fi.HasTypeParams {
+			genericsDetected = true
+		}
 	}
 
 	extraImports := []string{}
@@ -52,11 +58,13 @@ func main() {
 
 	funcTestTempl, err := template.New("TestFunction").Parse(Template)
 	if err != nil {
-		panic(err)
+		fmt.Fprintf(os.Stderr, "%s", err)
+		os.Exit(1)
 	}
 	for _, td := range templdatas {
 		if err := funcTestTempl.Execute(&buf, td); err != nil {
-			panic(err)
+			fmt.Fprintf(os.Stderr, "%s", err)
+			os.Exit(1)
 		}
 
 	}
@@ -67,11 +75,18 @@ func main() {
 	err = os.WriteFile(outFileName, []byte(outString), 0644)
 
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s", err)
+		os.Exit(1)
 		panic(err)
 	}
-	fmt.Printf("Created file %s\n", outFileName)
-	fmt.Printf("Created %d tests\n", len(templdatas))
+	fmt.Fprintf(os.Stdout, "Created file %s\n", outFileName)
+	fmt.Fprintf(os.Stdout, "Created %d tests\n", len(templdatas))
+	if genericsDetected {
+		fmt.Fprintf(os.Stderr, "Warning: functions use generic types, your test file will not compile.\n")
+		fmt.Fprintf(os.Stderr, "Instantiate the types to proceed.\n")
+	}
 	goFmt(outFileName)
+	os.Exit(0)
 }
 
 func goFmt(path string) error {
@@ -236,6 +251,7 @@ type FuncInfo struct {
 	Params        []*ParamInfo
 	Returns       []*ParamInfo // For Go, return values are also like parameters
 	ImportedFrom  string
+	HasTypeParams bool
 }
 
 func (fi FuncInfo) RequiredImports() []string {
@@ -477,6 +493,13 @@ func listPackageFuncs(pkgPath string) PackageInfo {
 						}
 					}
 
+					if tParams := funcDecl.Type.TypeParams; tParams != nil {
+						if list := tParams.List; list != nil {
+							if len(list) > 0 {
+								fInfo.HasTypeParams = true
+							}
+						}
+					}
 					// check params
 					if funcDecl.Type.Params != nil {
 						for _, field := range funcDecl.Type.Params.List {
