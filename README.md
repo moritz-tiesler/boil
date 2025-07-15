@@ -10,6 +10,8 @@ go get --tool github.com/moritz-tiesler/boil
 
 ```bash
 $ cat src/frog.go
+```
+```go
 package frog
 
 package test
@@ -22,7 +24,6 @@ func (f *Frog) quack(loud bool) string {
 	}
 	return "quack..."
 }
-
 ```
 ```bash
 $ cd src/
@@ -33,6 +34,8 @@ Created 1 tests
 
 ```bash
 $ cat frog_test.go
+```
+```go
 package frog
 
 import (
