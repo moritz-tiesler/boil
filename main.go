@@ -77,7 +77,6 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s", err)
 		os.Exit(1)
-		panic(err)
 	}
 	fmt.Fprintf(os.Stdout, "Created file %s\n", outFileName)
 	fmt.Fprintf(os.Stdout, "Created %d tests\n", len(templdatas))
@@ -86,7 +85,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Instantiate the types to proceed.\n")
 	}
 	goFmt(outFileName)
-	os.Exit(0)
 }
 
 func goFmt(path string) error {
