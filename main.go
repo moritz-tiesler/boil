@@ -394,8 +394,10 @@ const defaultFail = `t.Fatalf("test not implemented")`
 const Template = `
 func {{ .Name }}(t *testing.T) {
 	t.Run("{{ .Name }}_0", func(t *testing.T) {
+
 		// delete this after your implementation
 		{{ .DefaultFail }}
+
 		{{ .FuncInfo.PrintReceiverCtor }}
 		{{ .FuncInfo.PrintDefaultVarArgs }}
 		{{ .FuncInfo.PrintDefaultReturns }} {{ .FuncInfo.PrintCall }}({{ .FuncInfo.PrintDefaultArgs }})
