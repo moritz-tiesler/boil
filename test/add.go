@@ -10,12 +10,6 @@ func add(a, b int) int {
 	return a + b
 }
 
-type Num interface{ int | int32 | int64 }
-
-func Genadd[T Num](a, b T) T {
-	return a + b
-}
-
 func useStringsBuilder(sb strings.Builder) string {
 	sb.WriteString("touch")
 	return sb.String()
