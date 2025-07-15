@@ -12,13 +12,15 @@ go get --tool github.com/moritz-tiesler/boil
 $ cat src/frog.go
 package frog
 
-import "fmt"
+package test
 
 type Frog struct{}
 
-func (f *Frog) quack() string {
-	fmt.Println("quack!")
-	return "quack!"
+func (f *Frog) quack(loud bool) string {
+	if loud {
+		return "QUACK!"
+	}
+	return "quack..."
 }
 
 ```
@@ -40,11 +42,14 @@ import (
 
 func TestQuack(t *testing.T) {
 	t.Run("TestQuack_0", func(t *testing.T) {
+
 		// delete this after your implementation
 		t.Fatalf("test not implemented")
-		receiver := Frog{}
 
-		result0 := receiver.quack()
+		receiver := Frog{}
+		var loud bool
+
+		result0 := receiver.quack(loud)
 
 		var expect0 string
 		if !reflect.DeepEqual(result0, expect0) {
