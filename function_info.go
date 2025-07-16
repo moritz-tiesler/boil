@@ -111,7 +111,7 @@ func (fi FuncInfo) PrintReceiverCtor() string {
 	if fi.ReceiverType == "" {
 		return ctor
 	}
-	return fmt.Sprintf("receiver := %s{}", fi.ReceiverShort)
+	return fmt.Sprintf("var receiver %s", fi.ReceiverShort)
 }
 
 func (fi FuncInfo) PrintCall() string {
