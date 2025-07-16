@@ -131,7 +131,6 @@ func (fi FuncInfo) PrintDefaultExpects() string {
 	var expects strings.Builder
 	for i, retType := range fi.Returns {
 		expectName := fmt.Sprintf("expect%d", i)
-		// expcectType := retType.TypeName
 		expectType := retType.ZeroValue
 		resultName := fmt.Sprintf("result%d", i)
 		s := fmt.Sprintf(tmpl, expectName, expectType, resultName, expectName, expectName, resultName)
@@ -151,9 +150,6 @@ func (fi FuncInfo) PrintDefaultVarArgs() string {
 
 func (fi FuncInfo) PrintArgsAsStructFields() string {
 	var sb strings.Builder
-	// add test run name to struct
-	field := fmt.Sprintf("%s %s\n", "name", "string")
-	sb.WriteString(field)
 	for _, param := range fi.Params {
 		field := fmt.Sprintf("%s %s\n", param.Name, param.ZeroValue)
 		sb.WriteString(field)

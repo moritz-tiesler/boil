@@ -31,10 +31,6 @@ func init() {
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		flag.PrintDefaults() // Prints descriptions for defined flags (like --list)
 		fmt.Fprintf(os.Stderr, "\n")
-		// fmt.Fprintf(os.Stderr, "Usage examples:\n")
-		// fmt.Fprintf(os.Stderr, "  %s <language>        (e.g., %s go, %s python, %s node)\n", os.Args[0], os.Args[0], os.Args[0], os.Args[0])
-		// fmt.Fprintf(os.Stderr, "  %s --list            (To see all available languages)\n", os.Args[0])
-		// fmt.Fprintf(os.Stderr, "\n")
 	}
 }
 
@@ -109,6 +105,7 @@ func {{ .Name }}(t *testing.T) {
 const TemplateTable = `
 func {{ .Name }}(t *testing.T) {
 	tests := []struct {
+		testName string
 		{{ .FuncInfo.PrintArgsAsStructFields }}
 	}{
 		// put your test cases here
@@ -118,7 +115,7 @@ func {{ .Name }}(t *testing.T) {
 	{{ .DefaultFail }}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.testName, func(t *testing.T) {
 			{{ .FuncInfo.PrintReceiverCtor }}
 			{{ .FuncInfo.PrintDefaultReturns }} {{ .FuncInfo.PrintCall }}({{ .FuncInfo.PrintTableArgs }})
 			{{ .FuncInfo.PrintDefaultExpects }}
