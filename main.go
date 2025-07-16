@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"go/ast"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,87 +42,13 @@ func init() {
 func main() {
 	flag.Parse()
 
-	var testTemplate string
-	if asTable {
-		testTemplate = TemplateTable
-	} else {
-		testTemplate = Template
-	}
-
-	pkgPath, _ := os.Getwd()
-	pkgInfo := listPackageFuncs(pkgPath)
-
-	templdatas := []TestTemplateData{}
-	var genericsDetected bool
-	for _, fi := range pkgInfo.TestableFuncs() {
-		templData := TestTemplateData{
-			Name: fmt.Sprintf("Test%s%s",
-				strings.ToUpper(fi.Name[:1]),
-				fi.Name[1:],
-			),
-			FuncInfo: fi,
-			Table:    false,
-		}
-		templdatas = append(templdatas, templData)
-
-		if fi.HasTypeParams {
-			genericsDetected = true
-		}
-	}
-
-	extraImports := []string{}
-	for _, fi := range pkgInfo.Funcs {
-		for _, pi := range fi.Params {
-			if pi.ImportedFrom != "" {
-				extraImports = append(extraImports, pi.ImportedFrom)
-			}
-		}
-	}
-	var buf bytes.Buffer
-	importTempl, err := template.New("TestImports").Parse(TemplateImports)
-	if err != nil {
-		panic(err)
-	}
-	if err := importTempl.Execute(&buf, pkgInfo); err != nil {
-		panic(err)
-	}
-	buf.WriteString("\n")
-
-	funcTestTempl, err := template.New("TestFunction").Parse(testTemplate)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s\n", err)
+	if len(flag.Args()) != 0 {
+		flag.Usage()
 		os.Exit(1)
 	}
-	for _, td := range templdatas {
-		if err := funcTestTempl.Execute(&buf, td); err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", err)
-			os.Exit(1)
-		}
 
-	}
+	run(asTable)
 
-	outString := buf.String()
-
-	outFileName := pkgInfo.Name + "_test.go"
-	err = os.WriteFile(outFileName, []byte(outString), 0644)
-
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s", err)
-		os.Exit(1)
-	}
-	fmt.Fprintf(os.Stdout, "Created file %s\n", outFileName)
-	fmt.Fprintf(os.Stdout, "Created %d tests\n", len(templdatas))
-	if genericsDetected {
-		fmt.Fprintf(os.Stderr, "Warning: functions use generic types, your test file will not compile.\n")
-		fmt.Fprintf(os.Stderr, "Instantiate the types to proceed.\n")
-	}
-	goFmt(outFileName)
-}
-
-func goFmt(path string) error {
-	cmd := exec.Command("gofmt", "-w", path)
-
-	return cmd.Run()
 }
 
 type TestTemplateData struct {
@@ -200,70 +125,6 @@ func {{ .Name }}(t *testing.T) {
 }
 `
 
-func listPackageFuncs(pkgPath string) PackageInfo {
-
-	goroot, err := getGOROOT()
-	if err != nil {
-		panic(err)
-	}
-	cfg := &packages.Config{
-		Mode: packages.NeedName |
-			packages.NeedFiles |
-			packages.LoadFiles |
-			packages.NeedTypes |
-			packages.NeedSyntax |
-			packages.NeedImports |
-			packages.NeedModule |
-			packages.NeedCompiledGoFiles |
-			packages.NeedTypesInfo,
-	}
-
-	pkgs, err := packages.Load(cfg, pkgPath)
-	if err != nil {
-		panic(err)
-	}
-
-	if len(pkgs) != 1 {
-		panic("expected one pkg")
-	}
-
-	if packages.PrintErrors(pkgs) > 0 {
-		panic("packages containged errors")
-	}
-
-	pkgInfo := PackageInfo{
-		goRoot:           goroot,
-		MustPrintImports: make(map[string]*packages.Package),
-	}
-
-	for _, pkg := range pkgs {
-		if pkg.Module != nil {
-			pkgInfo.ModuleName = pkg.Module.Path
-			pkgInfo.PackageIsMain = pkg.Module.Main
-		}
-		pkgInfo.Imports = pkg.Imports
-		pkgInfo.Name = pkg.Name
-		pkgInfo.Path = pkg.PkgPath
-		for _, file := range pkg.Syntax {
-			fset := pkg.Fset
-			fName := fset.Position(file.Pos()).Filename
-			if strings.HasSuffix(fName, "_test.go") {
-				continue
-			}
-			ast.Inspect(file, func(n ast.Node) bool {
-				if funcDecl, ok := n.(*ast.FuncDecl); ok {
-					funcInfo := NewFunctionInfo(funcDecl, pkg)
-					pkgInfo.Add(funcInfo)
-				}
-				return true
-			})
-		}
-
-	}
-	return pkgInfo
-
-}
-
 func getSimplifiedTypeName(qualifiedType string) string {
 	parts := strings.Split(qualifiedType, "/")
 
@@ -311,17 +172,87 @@ func isStandardLibrary(pkg *packages.Package, goroot string) bool {
 	return false
 }
 
-func getGOROOT() (string, error) {
-	// goroot := os.Getenv("GOROOT")
+func run(asTable bool) {
 
-	cmd := exec.Command("go", "env", "GOROOT")
-	out, err := cmd.CombinedOutput()
+	pkgPath, _ := os.Getwd()
+	pkgInfo := NewPackageInfo(pkgPath)
+
+	templdatas := []TestTemplateData{}
+	var genericsDetected bool
+	for _, fi := range pkgInfo.TestableFuncs() {
+		templData := TestTemplateData{
+			Name: fmt.Sprintf("Test%s%s",
+				strings.ToUpper(fi.Name[:1]),
+				fi.Name[1:],
+			),
+			FuncInfo: fi,
+			Table:    false,
+		}
+		templdatas = append(templdatas, templData)
+
+		if fi.HasTypeParams {
+			genericsDetected = true
+		}
+	}
+
+	extraImports := []string{}
+	for _, fi := range pkgInfo.Funcs {
+		for _, pi := range fi.Params {
+			if pi.ImportedFrom != "" {
+				extraImports = append(extraImports, pi.ImportedFrom)
+			}
+		}
+	}
+	var buf bytes.Buffer
+	importTempl, err := template.New("TestImports").Parse(TemplateImports)
 	if err != nil {
-		return "", fmt.Errorf("failed to read GOOROOT environment variable")
+		panic(err)
 	}
-	goroot := string(out)
-	if goroot == "" {
-		return "", fmt.Errorf("GOROOT environment variable is not set")
+	if err := importTempl.Execute(&buf, pkgInfo); err != nil {
+		panic(err)
 	}
-	return filepath.Clean(goroot), nil
+	buf.WriteString("\n")
+
+	var testTemplate string
+	if asTable {
+		testTemplate = TemplateTable
+	} else {
+		testTemplate = Template
+	}
+
+	funcTestTempl, err := template.New("TestFunction").Parse(testTemplate)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s\n", err)
+		os.Exit(1)
+	}
+	for _, td := range templdatas {
+		if err := funcTestTempl.Execute(&buf, td); err != nil {
+			fmt.Fprintf(os.Stderr, "%s\n", err)
+			os.Exit(1)
+		}
+
+	}
+
+	outString := buf.String()
+
+	outFileName := pkgInfo.Name + "_test.go"
+	err = os.WriteFile(outFileName, []byte(outString), 0644)
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s", err)
+		os.Exit(1)
+	}
+	fmt.Fprintf(os.Stdout, "Created file %s\n", outFileName)
+	fmt.Fprintf(os.Stdout, "Created %d tests\n", len(templdatas))
+	if genericsDetected {
+		fmt.Fprintf(os.Stderr, "Warning: functions use generic types, your test file will not compile.\n")
+		fmt.Fprintf(os.Stderr, "Instantiate the types to proceed.\n")
+	}
+	goFmt(outFileName)
+}
+
+func goFmt(path string) error {
+	cmd := exec.Command("gofmt", "-w", path)
+
+	return cmd.Run()
 }
