@@ -79,7 +79,7 @@ import (
 
 func TestQuack(t *testing.T) {
 	tests := []struct {
-		name string
+		testName string
 		loud bool
 	}{
 		// put your test cases here
@@ -89,7 +89,7 @@ func TestQuack(t *testing.T) {
 	t.Fatalf("test not implemented")
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.testName, func(t *testing.T) {
 			var receiver Frog
 			result0 := receiver.quack(tt.loud)
 
