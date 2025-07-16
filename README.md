@@ -1,5 +1,7 @@
-## WIP
-### > beware of spaghetti
+# boil
+Generate tests for a go package 
+
+  
 
 ##  Installation
 
@@ -13,8 +15,6 @@ $ cat src/frog.go
 ```
 ```go
 package frog
-
-package test
 
 type Frog struct{}
 
@@ -49,7 +49,7 @@ func TestQuack(t *testing.T) {
 		// delete this after your implementation
 		t.Fatalf("test not implemented")
 
-		receiver := Frog{}
+		var receiver Frog
 		var loud bool
 
 		result0 := receiver.quack(loud)
