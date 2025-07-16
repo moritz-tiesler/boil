@@ -92,15 +92,15 @@ func (fi FuncInfo) PrintDefaultArgs() string {
 	return args.String()
 }
 
-func (fd FuncInfo) PrintDefaultReturns() string {
+func (fi FuncInfo) PrintDefaultReturns() string {
 	returnNames := ""
-	for i := range fd.Returns {
+	for i := range fi.Returns {
 		if i > 0 {
 			returnNames += ", "
 		}
 		returnNames += fmt.Sprintf("result%d", i)
 	}
-	if len(fd.Returns) > 0 {
+	if len(fi.Returns) > 0 {
 		returnNames += ":="
 	}
 	return returnNames
@@ -121,7 +121,7 @@ func (fi FuncInfo) PrintCall() string {
 	return fmt.Sprintf("receiver.%s", fi.Name)
 }
 
-func (fd FuncInfo) PrintDefaultExpects() string {
+func (fi FuncInfo) PrintDefaultExpects() string {
 	const tmpl = `
 		var %s %s
 		if !reflect.DeepEqual(%s, %s) {
@@ -129,7 +129,7 @@ func (fd FuncInfo) PrintDefaultExpects() string {
 		}
 	`
 	var expects strings.Builder
-	for i, retType := range fd.Returns {
+	for i, retType := range fi.Returns {
 		expectName := fmt.Sprintf("expect%d", i)
 		// expcectType := retType.TypeName
 		expectType := retType.ZeroValue
@@ -140,11 +140,36 @@ func (fd FuncInfo) PrintDefaultExpects() string {
 	return expects.String()
 }
 
-func (fd FuncInfo) PrintDefaultVarArgs() string {
+func (fi FuncInfo) PrintDefaultVarArgs() string {
 	var sb strings.Builder
-	for _, param := range fd.Params {
+	for _, param := range fi.Params {
 		def := fmt.Sprintf("var %s %s\n", param.Name, param.ZeroValue)
 		sb.WriteString(def)
 	}
 	return sb.String()
+}
+
+func (fi FuncInfo) PrintArgsAsStructFields() string {
+	var sb strings.Builder
+	// add test run name to struct
+	field := fmt.Sprintf("%s %s\n", "name", "string")
+	sb.WriteString(field)
+	for _, param := range fi.Params {
+		field := fmt.Sprintf("%s %s\n", param.Name, param.ZeroValue)
+		sb.WriteString(field)
+	}
+	return sb.String()
+}
+
+func (fi FuncInfo) PrintTableArgs() string {
+	var args strings.Builder
+	written := 0
+	for _, arg := range fi.Params {
+		if written > 0 {
+			args.WriteString(", ")
+		}
+		args.WriteString("tt." + arg.Name)
+		written++
+	}
+	return args.String()
 }

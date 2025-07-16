@@ -56,13 +56,14 @@ func main() {
 	buf.WriteString("\n")
 
 	funcTestTempl, err := template.New("TestFunction").Parse(Template)
+	// funcTestTempl, err := template.New("TestFunctionTable").Parse(TemplateTable)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s", err)
+		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
 	for _, td := range templdatas {
 		if err := funcTestTempl.Execute(&buf, td); err != nil {
-			fmt.Fprintf(os.Stderr, "%s", err)
+			fmt.Fprintf(os.Stderr, "%s\n", err)
 			os.Exit(1)
 		}
 
@@ -150,20 +151,20 @@ func {{ .Name }}(t *testing.T) {
 const TemplateTable = `
 func {{ .Name }}(t *testing.T) {
 	tests := []struct {
-		name string
-		a, b int
-		want int
+		{{ .FuncInfo.PrintArgsAsStructFields }}
 	}{}
+
 	// delete this after your implementation
-	{{ defaultFail }}
+	{{ .DefaultFail }}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := {{ .FuncData.Name }}(tt.a, tt.b)
-			if got != tt.want {
-				t.Errorf("Sum(%d, %d) = %d; want %d", tt.a, tt.b, got, tt.want)
-			}
+			{{ .FuncInfo.PrintReceiverCtor }}
+			{{ .FuncInfo.PrintDefaultReturns }} {{ .FuncInfo.PrintCall }}({{ .FuncInfo.PrintTableArgs }})
+			{{ .FuncInfo.PrintDefaultExpects }}
 		})
 	}
+}
 `
 
 func listPackageFuncs(pkgPath string) PackageInfo {
