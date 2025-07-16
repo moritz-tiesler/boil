@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"go/ast"
 	"os"
@@ -14,8 +15,41 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+// flags
+var asTable bool
+
+func init() {
+	const (
+		tableDefault bool   = false
+		tableUsage   string = "generate tests in table format"
+	)
+	flag.BoolVar(&asTable, "table", tableDefault, tableUsage)
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\n")
+		fmt.Fprintf(os.Stderr, "  This tool generates tests for the go package in the current directory.\n")
+		fmt.Fprintf(os.Stderr, "\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		flag.PrintDefaults() // Prints descriptions for defined flags (like --list)
+		fmt.Fprintf(os.Stderr, "\n")
+		// fmt.Fprintf(os.Stderr, "Usage examples:\n")
+		// fmt.Fprintf(os.Stderr, "  %s <language>        (e.g., %s go, %s python, %s node)\n", os.Args[0], os.Args[0], os.Args[0], os.Args[0])
+		// fmt.Fprintf(os.Stderr, "  %s --list            (To see all available languages)\n", os.Args[0])
+		// fmt.Fprintf(os.Stderr, "\n")
+	}
+}
+
 // todo return num of generated tests
 func main() {
+	flag.Parse()
+
+	var testTemplate string
+	if asTable {
+		testTemplate = TemplateTable
+	} else {
+		testTemplate = Template
+	}
+
 	pkgPath, _ := os.Getwd()
 	pkgInfo := listPackageFuncs(pkgPath)
 
@@ -55,8 +89,7 @@ func main() {
 	}
 	buf.WriteString("\n")
 
-	funcTestTempl, err := template.New("TestFunction").Parse(Template)
-	// funcTestTempl, err := template.New("TestFunctionTable").Parse(TemplateTable)
+	funcTestTempl, err := template.New("TestFunction").Parse(testTemplate)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
