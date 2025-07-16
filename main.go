@@ -110,7 +110,9 @@ const TemplateTable = `
 func {{ .Name }}(t *testing.T) {
 	tests := []struct {
 		{{ .FuncInfo.PrintArgsAsStructFields }}
-	}{}
+	}{
+		// put your test cases here
+	}
 
 	// delete this after your implementation
 	{{ .DefaultFail }}
