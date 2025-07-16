@@ -69,3 +69,36 @@ You can generate your tests in table format with the `--table` flag:
 ```bash
 $ go tool boil --table
 ```
+```go
+package frog
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestQuack(t *testing.T) {
+	tests := []struct {
+		name string
+		loud bool
+	}{
+		// put your test cases here
+	}
+
+	// delete this after your implementation
+	t.Fatalf("test not implemented")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var receiver Frog
+			result0 := receiver.quack(tt.loud)
+
+			var expect0 string
+			if !reflect.DeepEqual(result0, expect0) {
+				t.Errorf("Expected %v, got %v", expect0, result0)
+			}
+
+		})
+	}
+}
+```
