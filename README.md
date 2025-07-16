@@ -8,7 +8,7 @@ Generate tests for a go package
 ```bash
 go get --tool github.com/moritz-tiesler/boil
 ```
-## Usage 
+## Example 
 
 ```bash
 $ cat src/frog.go
@@ -61,4 +61,11 @@ func TestQuack(t *testing.T) {
 
 	})
 }
+```
+### Table Tests
+
+You can generate your tests in table format with the `--table` flag:
+
+```bash
+$ go tool boil --table
 ```
