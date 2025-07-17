@@ -88,6 +88,7 @@ import (
 const defaultFail = `t.Fatalf("test not implemented")`
 
 const Template = `
+{{ range .}}
 func {{ .Name }}(t *testing.T) {
 	t.Run("{{ .Name }}_0", func(t *testing.T) {
 
@@ -100,9 +101,11 @@ func {{ .Name }}(t *testing.T) {
 		{{ .FuncInfo.PrintDefaultExpects }}
 	})
 }
+{{ end }}
 `
 
 const TemplateTable = `
+{{ range .}}
 func {{ .Name }}(t *testing.T) {
 	tests := []struct {
 		testName string
@@ -122,6 +125,7 @@ func {{ .Name }}(t *testing.T) {
 		})
 	}
 }
+{{ end }}
 `
 
 func getSimplifiedTypeName(qualifiedType string) string {
@@ -224,12 +228,10 @@ func run(asTable bool) {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
-	for _, td := range templdatas {
-		if err := funcTestTempl.Execute(&buf, td); err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", err)
-			os.Exit(1)
-		}
 
+	if err := funcTestTempl.Execute(&buf, templdatas); err != nil {
+		fmt.Fprintf(os.Stderr, "%s\n", err)
+		os.Exit(1)
 	}
 
 	outString := buf.String()
