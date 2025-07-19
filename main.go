@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"go/types"
 	"os"
 	"os/exec"
-	"reflect"
 	"strings"
 	"text/template"
 )
@@ -47,31 +45,10 @@ func main() {
 
 type TestTemplateData struct {
 	FuncInfo FuncInfo
-	Name     string
-	Table    bool
 }
 
 func (td TestTemplateData) DefaultFail() string {
 	return defaultFail
-}
-
-type Arg struct {
-	Type       reflect.Type
-	IsStruct   bool
-	IsUserDecl bool
-}
-
-func (arg Arg) PrintDefaultCtor() string {
-	if arg.IsStruct {
-		return fmt.Sprintf("%s{}", arg.Type.Name())
-	}
-	if arg.Type.Kind() == reflect.Ptr {
-		return fmt.Sprintf("&%s{}", arg.Type.Name())
-	}
-	if arg.IsUserDecl {
-		return fmt.Sprintf("%s(%s)", arg.Type.Name(), reflect.Zero(arg.Type))
-	}
-	return ""
 }
 
 const TemplateImports = `package {{ .Name }}
@@ -87,8 +64,8 @@ const defaultFail = `t.Fatalf("test not implemented")`
 
 const Template = `
 {{ range .}}
-func {{ .Name }}(t *testing.T) {
-	t.Run("{{ .Name }}_0", func(t *testing.T) {
+func {{ .FuncInfo.PrintTestName }}(t *testing.T) {
+	t.Run("{{ .FuncInfo.PrintTestName }}_0", func(t *testing.T) {
 
 		// delete this after your implementation
 		{{ .DefaultFail }}
@@ -104,7 +81,7 @@ func {{ .Name }}(t *testing.T) {
 
 const TemplateTable = `
 {{ range .}}
-func {{ .Name }}(t *testing.T) {
+func {{ .FuncInfo.PrintTestName }}(t *testing.T) {
 	tests := []struct {
 		testName string
 		{{ .FuncInfo.PrintArgsAsStructFields }}
@@ -142,30 +119,6 @@ func extractPackagePrefix(typeName string) (string, string, string) {
 	return prefix, packageId, shortName
 }
 
-// func isStandardLibrary(pkg *types.Package, goroot string) bool {
-// 	if len(pkg.GoFiles) == 0 {
-// 		// If there are no Go files, it's unlikely a compilable standard library package.
-// 		// Some pseudo-packages might have no GoFiles, but usually they are not
-// 		// direct dependencies one would check.
-// 		return false
-// 	}
-
-// 	// Construct the expected standard library source path
-// 	stdLibSrcPrefix := filepath.Join(goroot, "src")
-
-// 	// Check if any of the package's Go files are located within GOROOT/src
-// 	for _, goFile := range pkg.GoFiles {
-// 		// Clean the file path to handle potential "../" or other non-canonical forms
-// 		cleanGoFile := filepath.Clean(goFile)
-
-// 		// Check if the file path has the GOROOT/src prefix
-// 		if strings.HasPrefix(cleanGoFile, stdLibSrcPrefix) {
-// 			return true
-// 		}
-// 	}
-// 	return false
-// }
-
 func run(asTable bool) {
 
 	pkgPath, _ := os.Getwd()
@@ -175,18 +128,10 @@ func run(asTable bool) {
 	// var genericsDetected boolG
 	for _, fi := range pkgInfo.TestableFuncs() {
 		templData := TestTemplateData{
-			Name: fmt.Sprintf("Test%s%s",
-				strings.ToUpper(fi.Name[:1]),
-				fi.Name[1:],
-			),
 			FuncInfo: fi,
-			Table:    false,
 		}
 		templdatas = append(templdatas, templData)
 
-		// if fi.HasTypeParams {
-		// 	genericsDetected = true
-		// }
 	}
 
 	extraImports := []string{}
@@ -245,54 +190,4 @@ func goFmt(path string) error {
 	cmd := exec.Command("gofmt", "-w", path)
 
 	return cmd.Run()
-}
-
-func getSimplifiedTypeName(typ types.Type, targetTypesPkg *types.Package) string {
-	switch t := typ.(type) {
-	case *types.Named:
-		if t.Obj().Pkg() == targetTypesPkg {
-			return t.Obj().Name()
-		}
-		obj := t.Obj()
-		pkg := obj.Pkg()
-		if pkg != nil {
-			return pkg.Name() + "." + obj.Name()
-		} else {
-			return obj.Name()
-		}
-	case *types.Pointer:
-		return "*" + getSimplifiedTypeName(t.Elem(), targetTypesPkg)
-	case *types.Slice:
-		return "[]" + getSimplifiedTypeName(t.Elem(), targetTypesPkg)
-	case *types.Array:
-		return fmt.Sprintf("[%d]%s", t.Len(), getSimplifiedTypeName(t.Elem(), targetTypesPkg))
-	case *types.Map:
-		return fmt.Sprintf("map[%s]%s",
-			getSimplifiedTypeName(t.Key(), targetTypesPkg),
-			getSimplifiedTypeName(t.Elem(), targetTypesPkg),
-		)
-	case *types.Chan:
-		dir := ""
-		switch t.Dir() {
-		case types.SendRecv:
-			dir = "chan "
-		case types.SendOnly:
-			dir = "chan <- "
-		case types.RecvOnly:
-			dir = "<- chan "
-		}
-		return dir + getSimplifiedTypeName(t.Elem(), targetTypesPkg)
-	case *types.Signature:
-		return t.String()
-	case *types.Struct:
-		return t.String()
-	case *types.Basic:
-		return t.Name()
-	default:
-		return t.String()
-	}
-}
-
-func getQualifiedTypeName(typ types.Type) string {
-	return typ.String()
 }

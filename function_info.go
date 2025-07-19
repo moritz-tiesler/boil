@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/types"
 	"strings"
+	"unicode"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -193,6 +194,28 @@ func (fi FuncInfo) PrintTableArgs() string {
 	return args.String()
 }
 
+func (fi FuncInfo) PrintTestName() string {
+	if fi.ReceiverType == "" {
+		return fmt.Sprintf(
+			"Test%s%s",
+			strings.ToUpper(fi.Name[:1]),
+			fi.Name[1:],
+		)
+	}
+	receiverPrefix := fmt.Sprintf(
+		"%s%s",
+		strings.ToUpper(fi.ReceiverTypeSimple[:1]),
+		fi.ReceiverTypeSimple[1:],
+	)
+	receiverPrefix = stripNonAlNum(receiverPrefix)
+	return fmt.Sprintf(
+		"Test%s%s%s",
+		receiverPrefix,
+		strings.ToUpper(fi.Name[:1]),
+		fi.Name[1:],
+	)
+}
+
 func getOriginatingPackage(typ types.Type, currentPkgTypes *types.Package) *types.Package {
 	switch t := typ.(type) {
 	case *types.Named:
@@ -231,4 +254,64 @@ func getOriginatingPackage(typ types.Type, currentPkgTypes *types.Package) *type
 		// and interfaces, they don't directly point to an external originating package here.
 	}
 	return nil
+}
+
+func getSimplifiedTypeName(typ types.Type, targetTypesPkg *types.Package) string {
+	switch t := typ.(type) {
+	case *types.Named:
+		if t.Obj().Pkg() == targetTypesPkg {
+			return t.Obj().Name()
+		}
+		obj := t.Obj()
+		pkg := obj.Pkg()
+		if pkg != nil {
+			return pkg.Name() + "." + obj.Name()
+		} else {
+			return obj.Name()
+		}
+	case *types.Pointer:
+		return "*" + getSimplifiedTypeName(t.Elem(), targetTypesPkg)
+	case *types.Slice:
+		return "[]" + getSimplifiedTypeName(t.Elem(), targetTypesPkg)
+	case *types.Array:
+		return fmt.Sprintf("[%d]%s", t.Len(), getSimplifiedTypeName(t.Elem(), targetTypesPkg))
+	case *types.Map:
+		return fmt.Sprintf("map[%s]%s",
+			getSimplifiedTypeName(t.Key(), targetTypesPkg),
+			getSimplifiedTypeName(t.Elem(), targetTypesPkg),
+		)
+	case *types.Chan:
+		dir := ""
+		switch t.Dir() {
+		case types.SendRecv:
+			dir = "chan "
+		case types.SendOnly:
+			dir = "chan <- "
+		case types.RecvOnly:
+			dir = "<- chan "
+		}
+		return dir + getSimplifiedTypeName(t.Elem(), targetTypesPkg)
+	case *types.Signature:
+		return t.String()
+	case *types.Struct:
+		return t.String()
+	case *types.Basic:
+		return t.Name()
+	default:
+		return t.String()
+	}
+}
+
+func getQualifiedTypeName(typ types.Type) string {
+	return typ.String()
+}
+
+func stripNonAlNum(input string) string {
+	cleanedString := strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return r
+		}
+		return -1 // Exclude non-alphanumeric characters
+	}, input)
+	return cleanedString
 }
