@@ -44,3 +44,11 @@ func NewAdders(offset int) []*Adder {
 	adders = append(adders, &Adder{offset: offset})
 	return adders
 }
+
+func NewAddersMap(offset int) map[int]*Adder {
+	adders := make(map[int]*Adder)
+	for i := range offset {
+		adders[i] = &Adder{offset: i}
+	}
+	return adders
+}
