@@ -15,7 +15,7 @@ type PackageInfo struct {
 	PackageIsMain bool
 	Path          string
 	Name          string
-	Imports       map[string]*packages.Package
+	Imports       map[string]struct{}
 	Funcs         []FuncInfo
 	goRoot        string
 }
@@ -52,7 +52,8 @@ func NewPackageInfo(pkgPath string) PackageInfo {
 	}
 
 	pkgInfo := PackageInfo{
-		goRoot: goroot,
+		goRoot:  goroot,
+		Imports: make(map[string]struct{}),
 	}
 
 	for _, pkg := range pkgs {
@@ -60,7 +61,6 @@ func NewPackageInfo(pkgPath string) PackageInfo {
 			pkgInfo.ModuleName = pkg.Module.Path
 			pkgInfo.PackageIsMain = pkg.Module.Main
 		}
-		pkgInfo.Imports = pkg.Imports
 		pkgInfo.Name = pkg.Name
 		pkgInfo.Path = pkg.PkgPath
 		for _, file := range pkg.Syntax {
@@ -94,18 +94,29 @@ func (pi PackageInfo) TestableFuncs() []FuncInfo {
 }
 
 func (pi *PackageInfo) Add(fi *FuncInfo) {
+
+	// for _, param := range fi.Params {
+	// 	pi.Imports[param.Pkg.Path()] = &param.Pkg
+	// }
+	// for _, ret := range fi.Returns {
+	// 	pi.Imports[ret.Pkg.Path()] = &ret.Pkg
+	// }
+	for k, _ := range fi.RequiredImports {
+		pi.Imports[k] = struct{}{}
+	}
 	pi.Funcs = append(pi.Funcs, *fi)
 }
 
 func (pi PackageInfo) PrintImports() string {
 	var sb strings.Builder
-	for name, pkg := range pi.Imports {
+	for name, _ := range pi.Imports {
 		var importStr string
-		if isStandardLibrary(pkg, pi.goRoot) {
-			importStr = strings.TrimPrefix(pi.goRoot, name)
-		} else {
-			importStr = name
-		}
+		// if isStandardLibrary(pkg, pi.goRoot) {
+		// 	importStr = strings.TrimPrefix(pi.goRoot, name)
+		// } else {
+		// 	importStr = name
+		// }
+		importStr = name
 		sb.WriteString(fmt.Sprintf("\"%s\"\n", importStr))
 	}
 	return sb.String()

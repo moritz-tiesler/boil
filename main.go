@@ -7,12 +7,9 @@ import (
 	"go/types"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"text/template"
-
-	"golang.org/x/tools/go/packages"
 )
 
 // flags
@@ -145,29 +142,29 @@ func extractPackagePrefix(typeName string) (string, string, string) {
 	return prefix, packageId, shortName
 }
 
-func isStandardLibrary(pkg *packages.Package, goroot string) bool {
-	if len(pkg.GoFiles) == 0 {
-		// If there are no Go files, it's unlikely a compilable standard library package.
-		// Some pseudo-packages might have no GoFiles, but usually they are not
-		// direct dependencies one would check.
-		return false
-	}
+// func isStandardLibrary(pkg *types.Package, goroot string) bool {
+// 	if len(pkg.GoFiles) == 0 {
+// 		// If there are no Go files, it's unlikely a compilable standard library package.
+// 		// Some pseudo-packages might have no GoFiles, but usually they are not
+// 		// direct dependencies one would check.
+// 		return false
+// 	}
 
-	// Construct the expected standard library source path
-	stdLibSrcPrefix := filepath.Join(goroot, "src")
+// 	// Construct the expected standard library source path
+// 	stdLibSrcPrefix := filepath.Join(goroot, "src")
 
-	// Check if any of the package's Go files are located within GOROOT/src
-	for _, goFile := range pkg.GoFiles {
-		// Clean the file path to handle potential "../" or other non-canonical forms
-		cleanGoFile := filepath.Clean(goFile)
+// 	// Check if any of the package's Go files are located within GOROOT/src
+// 	for _, goFile := range pkg.GoFiles {
+// 		// Clean the file path to handle potential "../" or other non-canonical forms
+// 		cleanGoFile := filepath.Clean(goFile)
 
-		// Check if the file path has the GOROOT/src prefix
-		if strings.HasPrefix(cleanGoFile, stdLibSrcPrefix) {
-			return true
-		}
-	}
-	return false
-}
+// 		// Check if the file path has the GOROOT/src prefix
+// 		if strings.HasPrefix(cleanGoFile, stdLibSrcPrefix) {
+// 			return true
+// 		}
+// 	}
+// 	return false
+// }
 
 func run(asTable bool) {
 
@@ -195,7 +192,7 @@ func run(asTable bool) {
 	extraImports := []string{}
 	for _, fi := range pkgInfo.Funcs {
 		for _, pi := range fi.Params {
-			extraImports = append(extraImports, pi.Pkg.PkgPath)
+			extraImports = append(extraImports, pi.Pkg.Path())
 		}
 	}
 	var buf bytes.Buffer

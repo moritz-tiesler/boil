@@ -16,14 +16,15 @@ type FuncInfo struct {
 	ReceiverTypeSimple string
 	Params             []*ParamInfo
 	Returns            []*ParamInfo // For Go, return values are also like parameters
-	ImportedFrom       string
 	HasTypeParams      bool
+	RequiredImports    map[string]struct{}
 }
 
 func NewFunctionInfo(funcDecl *ast.FuncDecl, pkg *packages.Package) *FuncInfo {
 
 	fInfo := FuncInfo{
-		Name: funcDecl.Name.Name,
+		Name:            funcDecl.Name.Name,
+		RequiredImports: map[string]struct{}{},
 	}
 
 	fnType := pkg.TypesInfo.TypeOf(funcDecl.Name) // returns types.Signature
@@ -34,23 +35,30 @@ func NewFunctionInfo(funcDecl *ast.FuncDecl, pkg *packages.Package) *FuncInfo {
 			recVar := sig.Recv()
 			fInfo.ReceiverType = getQualifiedTypeName(recVar.Type())
 			fInfo.ReceiverTypeSimple = getSimplifiedTypeName(recVar.Type(), pkg.Types)
+			if p := getOriginatingPackage(sig.Recv().Type(), pkg.Types); p != nil {
+				fInfo.RequiredImports[p.Path()] = struct{}{}
+			}
 		}
 
 		i := 0
 		if params := sig.Params(); params != nil {
 			for paramVar := range params.Variables() { // <--- Changed here: use Variables() and range loop
 				paramTypeName := getQualifiedTypeName(paramVar.Type())
-				paramTypeNameSimple := getSimplifiedTypeName(paramVar.Type(), pkg.Types)
 
+				paramTypeNameSimple := getSimplifiedTypeName(paramVar.Type(), pkg.Types)
 				paramName := paramVar.Name()
+				paramVar.Origin()
 				if paramName == "" {
 					paramName = fmt.Sprintf("param%d", i) // Provide a default name for unnamed parameters
+				}
+				if p := getOriginatingPackage(paramVar.Type(), pkg.Types); p != nil {
+					fInfo.RequiredImports[p.Path()] = struct{}{}
 				}
 				fInfo.Params = append(fInfo.Params, &ParamInfo{
 					Name:           paramName,
 					TypeName:       paramTypeName,
 					TypeNameSimple: paramTypeNameSimple,
-					Pkg:            *pkg,
+					Pkg:            *paramVar.Pkg(),
 				})
 				i++
 			}
@@ -66,11 +74,14 @@ func NewFunctionInfo(funcDecl *ast.FuncDecl, pkg *packages.Package) *FuncInfo {
 				if returnName == "" {
 					returnName = fmt.Sprintf("result%d", i) // Provide a default name for unnamed results
 				}
+				if p := getOriginatingPackage(returnVar.Type(), pkg.Types); p != nil {
+					fInfo.RequiredImports[p.Path()] = struct{}{}
+				}
 				fInfo.Returns = append(fInfo.Returns, &ParamInfo{
 					Name:           returnName,
 					TypeName:       returnTypeName,
 					TypeNameSimple: returnTypeNameSimple,
-					Pkg:            *pkg,
+					Pkg:            *returnVar.Pkg(),
 				})
 			}
 		}
@@ -79,14 +90,14 @@ func NewFunctionInfo(funcDecl *ast.FuncDecl, pkg *packages.Package) *FuncInfo {
 	return &fInfo
 }
 
-func (fi FuncInfo) RequiredImports() []string {
+func (fi FuncInfo) GetRequiredImports() []string {
 	var required []string
 	for _, p := range fi.Params {
-		required = append(required, p.Pkg.PkgPath)
+		required = append(required, p.Pkg.Path())
 	}
 
 	for _, p := range fi.Returns {
-		required = append(required, p.Pkg.PkgPath)
+		required = append(required, p.Pkg.Path())
 	}
 	return required
 }
@@ -180,4 +191,44 @@ func (fi FuncInfo) PrintTableArgs() string {
 		written++
 	}
 	return args.String()
+}
+
+func getOriginatingPackage(typ types.Type, currentPkgTypes *types.Package) *types.Package {
+	switch t := typ.(type) {
+	case *types.Named:
+		// If it's a named type and belongs to a package different from the current one
+		if t.Obj().Pkg() != nil && t.Obj().Pkg() != currentPkgTypes {
+			return t.Obj().Pkg()
+		}
+	case *types.Pointer:
+		return getOriginatingPackage(t.Elem(), currentPkgTypes)
+	case *types.Slice:
+		return getOriginatingPackage(t.Elem(), currentPkgTypes)
+	case *types.Array:
+		return getOriginatingPackage(t.Elem(), currentPkgTypes)
+	case *types.Map:
+		if pkg := getOriginatingPackage(t.Key(), currentPkgTypes); pkg != nil {
+			return pkg
+		}
+		if pkg := getOriginatingPackage(t.Elem(), currentPkgTypes); pkg != nil {
+			return pkg
+		}
+	case *types.Chan:
+		return getOriginatingPackage(t.Elem(), currentPkgTypes)
+	case *types.Signature:
+		// For function types (e.g., if a param is a function), check its parameters and results
+		for i := 0; i < t.Params().Len(); i++ {
+			if pkg := getOriginatingPackage(t.Params().At(i).Type(), currentPkgTypes); pkg != nil {
+				return pkg
+			}
+		}
+		for i := 0; i < t.Results().Len(); i++ {
+			if pkg := getOriginatingPackage(t.Results().At(i).Type(), currentPkgTypes); pkg != nil {
+				return pkg
+			}
+		}
+		// For basic types, structs (unless they are underlying a Named type already handled),
+		// and interfaces, they don't directly point to an external originating package here.
+	}
+	return nil
 }
