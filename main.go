@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 	"text/template"
 )
 
@@ -25,12 +24,11 @@ func init() {
 		fmt.Fprintf(os.Stderr, "  This tool generates tests for the go package in the current directory.\n")
 		fmt.Fprintf(os.Stderr, "\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
-		flag.PrintDefaults() // Prints descriptions for defined flags (like --list)
+		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\n")
 	}
 }
 
-// todo return num of generated tests
 func main() {
 	flag.Parse()
 
@@ -51,7 +49,8 @@ func (td TestTemplateData) DefaultFail() string {
 	return defaultFail
 }
 
-const TemplateImports = `package {{ .Name }}
+const (
+	TemplateImports = `package {{ .Name }}
 
 import (
 	"testing"
@@ -60,9 +59,9 @@ import (
 )
 `
 
-const defaultFail = `t.Fatalf("test not implemented")`
+	defaultFail = `t.Fatalf("test not implemented")`
 
-const Template = `
+	Template = `
 {{ range .}}
 func {{ .FuncInfo.PrintTestName }}(t *testing.T) {
 	t.Run("{{ .FuncInfo.PrintTestName }}_0", func(t *testing.T) {
@@ -79,7 +78,7 @@ func {{ .FuncInfo.PrintTestName }}(t *testing.T) {
 {{ end }}
 `
 
-const TemplateTable = `
+	TemplateTable = `
 {{ range .}}
 func {{ .FuncInfo.PrintTestName }}(t *testing.T) {
 	tests := []struct {
@@ -102,22 +101,7 @@ func {{ .FuncInfo.PrintTestName }}(t *testing.T) {
 }
 {{ end }}
 `
-
-func extractPackagePrefix(typeName string) (string, string, string) {
-	typeName = strings.TrimPrefix(typeName, "*")
-	var prefix string
-	parts := strings.Split(typeName, "/")
-	last := max(0, len(parts)-1)
-	pre, shortName, cut := strings.Cut(parts[last], ".")
-	if cut {
-		prefix = pre
-	}
-	var packageId string
-	if last > 0 {
-		packageId = strings.Join(parts[:last], "/")
-	}
-	return prefix, packageId, shortName
-}
+)
 
 func run(asTable bool) {
 
@@ -134,12 +118,6 @@ func run(asTable bool) {
 
 	}
 
-	extraImports := []string{}
-	for _, fi := range pkgInfo.Funcs {
-		for _, pi := range fi.Params {
-			extraImports = append(extraImports, pi.Pkg.Path())
-		}
-	}
 	var buf bytes.Buffer
 	importTempl, err := template.New("TestImports").Parse(TemplateImports)
 	if err != nil {

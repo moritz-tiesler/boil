@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"go/ast"
+	"maps"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -29,7 +30,6 @@ func NewPackageInfo(pkgPath string) PackageInfo {
 	cfg := &packages.Config{
 		Mode: packages.NeedName |
 			packages.NeedFiles |
-			// packages.LoadFiles | // <--- REMOVE THIS LINE
 			packages.NeedTypes |
 			packages.NeedSyntax |
 			packages.NeedImports |
@@ -44,11 +44,11 @@ func NewPackageInfo(pkgPath string) PackageInfo {
 	}
 
 	if len(pkgs) != 1 {
-		panic("expected one pkg")
+		panic(fmt.Sprintf("expected one packaged in %s", pkgPath))
 	}
 
 	if packages.PrintErrors(pkgs) > 0 {
-		panic("packages containged errors")
+		panic("packages contains errors")
 	}
 
 	pkgInfo := PackageInfo{
@@ -56,29 +56,30 @@ func NewPackageInfo(pkgPath string) PackageInfo {
 		Imports: make(map[string]struct{}),
 	}
 
-	for _, pkg := range pkgs {
-		if pkg.Module != nil {
-			pkgInfo.ModuleName = pkg.Module.Path
-			pkgInfo.PackageIsMain = pkg.Module.Main
-		}
-		pkgInfo.Name = pkg.Name
-		pkgInfo.Path = pkg.PkgPath
-		for _, file := range pkg.Syntax {
-			fset := pkg.Fset
-			fName := fset.Position(file.Pos()).Filename
-			if strings.HasSuffix(fName, "_test.go") {
-				continue
-			}
-			ast.Inspect(file, func(n ast.Node) bool {
-				if funcDecl, ok := n.(*ast.FuncDecl); ok {
-					funcInfo := NewFunctionInfo(funcDecl, pkg)
-					pkgInfo.Add(funcInfo)
-				}
-				return true
-			})
-		}
+	pkg := pkgs[0]
 
+	if pkg.Module != nil {
+		pkgInfo.ModuleName = pkg.Module.Path
+		pkgInfo.PackageIsMain = pkg.Module.Main
 	}
+
+	pkgInfo.Name = pkg.Name
+	pkgInfo.Path = pkg.PkgPath
+	for _, file := range pkg.Syntax {
+		fset := pkg.Fset
+		fName := fset.Position(file.Pos()).Filename
+		if strings.HasSuffix(fName, "_test.go") {
+			continue
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			if funcDecl, ok := n.(*ast.FuncDecl); ok {
+				funcInfo := NewFunctionInfo(funcDecl, pkg)
+				pkgInfo.Add(funcInfo)
+			}
+			return true
+		})
+	}
+
 	return pkgInfo
 }
 
@@ -94,28 +95,14 @@ func (pi PackageInfo) TestableFuncs() []FuncInfo {
 }
 
 func (pi *PackageInfo) Add(fi *FuncInfo) {
-
-	// for _, param := range fi.Params {
-	// 	pi.Imports[param.Pkg.Path()] = &param.Pkg
-	// }
-	// for _, ret := range fi.Returns {
-	// 	pi.Imports[ret.Pkg.Path()] = &ret.Pkg
-	// }
-	for k, _ := range fi.RequiredImports {
-		pi.Imports[k] = struct{}{}
-	}
+	maps.Insert(pi.Imports, maps.All(fi.RequiredImports))
 	pi.Funcs = append(pi.Funcs, *fi)
 }
 
 func (pi PackageInfo) PrintImports() string {
 	var sb strings.Builder
-	for name, _ := range pi.Imports {
+	for name := range pi.Imports {
 		var importStr string
-		// if isStandardLibrary(pkg, pi.goRoot) {
-		// 	importStr = strings.TrimPrefix(pi.goRoot, name)
-		// } else {
-		// 	importStr = name
-		// }
 		importStr = name
 		sb.WriteString(fmt.Sprintf("\"%s\"\n", importStr))
 	}
@@ -123,8 +110,6 @@ func (pi PackageInfo) PrintImports() string {
 }
 
 func getGOROOT() (string, error) {
-	// goroot := os.Getenv("GOROOT")
-
 	cmd := exec.Command("go", "env", "GOROOT")
 	out, err := cmd.CombinedOutput()
 	if err != nil {

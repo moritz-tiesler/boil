@@ -15,8 +15,8 @@ type FuncInfo struct {
 	IsExported         bool
 	ReceiverType       string // Fully qualified type string
 	ReceiverTypeSimple string
-	Params             []*ParamInfo
-	Returns            []*ParamInfo // For Go, return values are also like parameters
+	Params             []ParamInfo
+	Returns            []ParamInfo // For Go, return values are also like parameters
 	HasTypeParams      bool
 	RequiredImports    map[string]struct{}
 }
@@ -28,9 +28,8 @@ func NewFunctionInfo(funcDecl *ast.FuncDecl, pkg *packages.Package) *FuncInfo {
 		RequiredImports: map[string]struct{}{},
 	}
 
-	fnType := pkg.TypesInfo.TypeOf(funcDecl.Name) // returns types.Signature
+	fnType := pkg.TypesInfo.TypeOf(funcDecl.Name)
 
-	// TODO: this could be an easier way to access the types
 	if sig, ok := fnType.(*types.Signature); ok {
 		if sig.Recv() != nil {
 			recVar := sig.Recv()
@@ -43,7 +42,7 @@ func NewFunctionInfo(funcDecl *ast.FuncDecl, pkg *packages.Package) *FuncInfo {
 
 		i := 0
 		if params := sig.Params(); params != nil {
-			for paramVar := range params.Variables() { // <--- Changed here: use Variables() and range loop
+			for paramVar := range params.Variables() {
 				paramTypeName := getQualifiedTypeName(paramVar.Type())
 
 				paramTypeNameSimple := getSimplifiedTypeName(paramVar.Type(), pkg.Types)
@@ -55,7 +54,7 @@ func NewFunctionInfo(funcDecl *ast.FuncDecl, pkg *packages.Package) *FuncInfo {
 				if p := getOriginatingPackage(paramVar.Type(), pkg.Types); p != nil {
 					fInfo.RequiredImports[p.Path()] = struct{}{}
 				}
-				fInfo.Params = append(fInfo.Params, &ParamInfo{
+				fInfo.Params = append(fInfo.Params, ParamInfo{
 					Name:           paramName,
 					TypeName:       paramTypeName,
 					TypeNameSimple: paramTypeNameSimple,
@@ -67,7 +66,7 @@ func NewFunctionInfo(funcDecl *ast.FuncDecl, pkg *packages.Package) *FuncInfo {
 
 		i = 0
 		if results := sig.Results(); results != nil {
-			for returnVar := range results.Variables() { // <--- Changed here: use Variables() and range loop
+			for returnVar := range results.Variables() {
 				returnTypeName := getQualifiedTypeName(returnVar.Type())
 				returnTypeNameSimple := getSimplifiedTypeName(returnVar.Type(), pkg.Types)
 
@@ -78,7 +77,7 @@ func NewFunctionInfo(funcDecl *ast.FuncDecl, pkg *packages.Package) *FuncInfo {
 				if p := getOriginatingPackage(returnVar.Type(), pkg.Types); p != nil {
 					fInfo.RequiredImports[p.Path()] = struct{}{}
 				}
-				fInfo.Returns = append(fInfo.Returns, &ParamInfo{
+				fInfo.Returns = append(fInfo.Returns, ParamInfo{
 					Name:           returnName,
 					TypeName:       returnTypeName,
 					TypeNameSimple: returnTypeNameSimple,
@@ -89,18 +88,6 @@ func NewFunctionInfo(funcDecl *ast.FuncDecl, pkg *packages.Package) *FuncInfo {
 
 	}
 	return &fInfo
-}
-
-func (fi FuncInfo) GetRequiredImports() []string {
-	var required []string
-	for _, p := range fi.Params {
-		required = append(required, p.Pkg.Path())
-	}
-
-	for _, p := range fi.Returns {
-		required = append(required, p.Pkg.Path())
-	}
-	return required
 }
 
 func (fi FuncInfo) PrintDefaultArgs() string {
