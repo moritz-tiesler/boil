@@ -1,442 +1,196 @@
 package main
 
 import (
-	"go/ast"
-	"go/types"
-	"reflect"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
 	"testing"
-
-	"golang.org/x/tools/go/packages"
 )
 
-func TestNewFunctionInfo(t *testing.T) {
-	t.Run("TestNewFunctionInfo_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var funcDecl *ast.FuncDecl
-		var pkg *packages.Package
-
-		result0 := NewFunctionInfo(funcDecl, pkg)
-
-		var expect0 *FuncInfo
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
+func TestTestGeneration(t *testing.T) {
+	pkgName := "test"
+	clear := func() {
+		entries, _ := os.ReadDir(".")
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), "_test.go") {
+				os.Remove(e.Name())
+			}
 		}
+	}
+	cd := func(path string) error {
+		return os.Chdir(path)
+	}
 
-	})
+	generate := func() {
+		run(false)
+	}
+
+	runTest := func() ([]byte, error) {
+		cmd := exec.Command("go", "test", ".", "-json")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return out, err
+		}
+		return out, nil
+	}
+
+	cd(pkgName)
+	clear()
+	generate()
+	testOutput, err := runTest()
+	if err == nil {
+		t.Fatalf("expected generated tests to fail")
+	}
+	fmt.Println(string(testOutput))
+
+	type testAction struct {
+		Action string
+		Test   string
+	}
+
+	var testActions []testAction
+
+	decoder := json.NewDecoder(bytes.NewReader(testOutput))
+	for decoder.More() {
+		var testAction testAction
+		if err = decoder.Decode(&testAction); err != nil {
+			t.Fatalf("failed to unmarshal test output: %v\n", err)
+		}
+		testActions = append(testActions, testAction)
+	}
+
+	runTests := make(map[string]string)
+	nRan := 0
+	for _, ta := range testActions {
+		if ta.Action == "build-fail" {
+			t.Fatal("tests did not compile")
+		}
+		if ta.Action == "output" {
+			continue
+		}
+		if ta.Test == "" {
+			// package fail message
+			continue
+		}
+		if ta.Action == "run" {
+			nRan++
+		}
+		runTests[ta.Test] = ta.Action
+	}
+
+	t.Logf("%d tests ran\n", nRan)
+	if nRan == 0 {
+		t.Fatal("no generated test were ran")
+	}
+
+	if len(runTests) != nRan {
+		t.Logf("recoded action: %+v", testActions)
+		t.Fatalf("expected output for %d tests, got ouput for %d\n", nRan, len(runTests))
+	}
+
+	nFail := 0
+	for _, action := range runTests {
+		if action != "fail" {
+			t.Fatalf("expected test fail, got=%s\n", action)
+		}
+		nFail++
+	}
+	clear()
+	t.Logf("%d tests failed\n", nRan)
+
 }
-
-func TestRequiredImports(t *testing.T) {
-	t.Run("TestRequiredImports_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var receiver FuncInfo
-
-		result0 := receiver.RequiredImports()
-
-		var expect0 []string
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
+func TestTableTestGeneration(t *testing.T) {
+	pkgName := "test"
+	clear := func() {
+		entries, _ := os.ReadDir(".")
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), "_test.go") {
+				os.Remove(e.Name())
+			}
 		}
+	}
+	cd := func(path string) error {
+		return os.Chdir(path)
+	}
 
-	})
-}
+	generate := func() {
+		run(true)
+	}
 
-func TestPrintDefaultArgs(t *testing.T) {
-	t.Run("TestPrintDefaultArgs_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var receiver FuncInfo
-
-		result0 := receiver.PrintDefaultArgs()
-
-		var expect0 string
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
+	runTest := func() ([]byte, error) {
+		cmd := exec.Command("go", "test", ".", "-json")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return out, err
 		}
+		return out, nil
+	}
 
-	})
-}
+	cd(pkgName)
+	clear()
+	generate()
+	testOutput, err := runTest()
+	if err == nil {
+		t.Fatalf("expected generated tests to fail")
+	}
+	fmt.Println(string(testOutput))
 
-func TestPrintDefaultReturns(t *testing.T) {
-	t.Run("TestPrintDefaultReturns_0", func(t *testing.T) {
+	type testAction struct {
+		Action string
+		Test   string
+	}
 
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
+	var testActions []testAction
 
-		var receiver FuncInfo
-
-		result0 := receiver.PrintDefaultReturns()
-
-		var expect0 string
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
+	decoder := json.NewDecoder(bytes.NewReader(testOutput))
+	for decoder.More() {
+		var testAction testAction
+		if err = decoder.Decode(&testAction); err != nil {
+			t.Fatalf("failed to unmarshal test output: %v\n", err)
 		}
+		testActions = append(testActions, testAction)
+	}
 
-	})
-}
-
-func TestPrintReceiverCtor(t *testing.T) {
-	t.Run("TestPrintReceiverCtor_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var receiver FuncInfo
-
-		result0 := receiver.PrintReceiverCtor()
-
-		var expect0 string
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
+	runTests := make(map[string]string)
+	nRan := 0
+	for _, ta := range testActions {
+		if ta.Action == "build-fail" {
+			t.Fatal("tests did not compile")
 		}
-
-	})
-}
-
-func TestPrintCall(t *testing.T) {
-	t.Run("TestPrintCall_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var receiver FuncInfo
-
-		result0 := receiver.PrintCall()
-
-		var expect0 string
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
+		if ta.Action == "output" {
+			continue
 		}
-
-	})
-}
-
-func TestPrintDefaultExpects(t *testing.T) {
-	t.Run("TestPrintDefaultExpects_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var receiver FuncInfo
-
-		result0 := receiver.PrintDefaultExpects()
-
-		var expect0 string
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
+		if ta.Test == "" {
+			// package fail message
+			continue
 		}
-
-	})
-}
-
-func TestPrintDefaultVarArgs(t *testing.T) {
-	t.Run("TestPrintDefaultVarArgs_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var receiver FuncInfo
-
-		result0 := receiver.PrintDefaultVarArgs()
-
-		var expect0 string
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
+		if ta.Action == "run" {
+			nRan++
 		}
+		runTests[ta.Test] = ta.Action
+	}
 
-	})
-}
+	t.Logf("%d tests ran\n", nRan)
+	if nRan == 0 {
+		t.Fatal("no generated test were ran")
+	}
 
-func TestPrintArgsAsStructFields(t *testing.T) {
-	t.Run("TestPrintArgsAsStructFields_0", func(t *testing.T) {
+	if len(runTests) != nRan {
+		t.Logf("recoded action: %+v", testActions)
+		t.Fatalf("expected output for %d tests, got ouput for %d\n", nRan, len(runTests))
+	}
 
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var receiver FuncInfo
-
-		result0 := receiver.PrintArgsAsStructFields()
-
-		var expect0 string
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
+	nFail := 0
+	for _, action := range runTests {
+		if action != "fail" {
+			t.Fatalf("expected test fail, got=%s\n", action)
 		}
+		nFail++
+	}
+	clear()
+	t.Logf("%d tests failed\n", nRan)
 
-	})
-}
-
-func TestPrintTableArgs(t *testing.T) {
-	t.Run("TestPrintTableArgs_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var receiver FuncInfo
-
-		result0 := receiver.PrintTableArgs()
-
-		var expect0 string
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
-		}
-
-	})
-}
-
-func TestMain(t *testing.T) {
-	t.Run("TestMain_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		main()
-
-	})
-}
-
-func TestDefaultFail(t *testing.T) {
-	t.Run("TestDefaultFail_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var receiver TestTemplateData
-
-		result0 := receiver.DefaultFail()
-
-		var expect0 string
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
-		}
-
-	})
-}
-
-func TestPrintDefaultCtor(t *testing.T) {
-	t.Run("TestPrintDefaultCtor_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var receiver Arg
-
-		result0 := receiver.PrintDefaultCtor()
-
-		var expect0 string
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
-		}
-
-	})
-}
-
-func TestExtractPackagePrefix(t *testing.T) {
-	t.Run("TestExtractPackagePrefix_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var typeName string
-
-		result0, result1, result2 := extractPackagePrefix(typeName)
-
-		var expect0 string
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
-		}
-
-		var expect1 string
-		if !reflect.DeepEqual(result1, expect1) {
-			t.Errorf("Expected %v, got %v", expect1, result1)
-		}
-
-		var expect2 string
-		if !reflect.DeepEqual(result2, expect2) {
-			t.Errorf("Expected %v, got %v", expect2, result2)
-		}
-
-	})
-}
-
-func TestIsStandardLibrary(t *testing.T) {
-	t.Run("TestIsStandardLibrary_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var pkg *packages.Package
-		var goroot string
-
-		result0 := isStandardLibrary(pkg, goroot)
-
-		var expect0 bool
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
-		}
-
-	})
-}
-
-func TestRun(t *testing.T) {
-	t.Run("TestRun_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var asTable bool
-
-		run(asTable)
-
-	})
-}
-
-func TestGoFmt(t *testing.T) {
-	t.Run("TestGoFmt_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var path string
-
-		result0 := goFmt(path)
-
-		var expect0 error
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
-		}
-
-	})
-}
-
-func TestGetSimplifiedTypeName(t *testing.T) {
-	t.Run("TestGetSimplifiedTypeName_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var typ types.Type
-		var targetTypesPkg *types.Package
-
-		result0 := getSimplifiedTypeName(typ, targetTypesPkg)
-
-		var expect0 string
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
-		}
-
-	})
-}
-
-func TestGetQualifiedTypeName(t *testing.T) {
-	t.Run("TestGetQualifiedTypeName_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var typ types.Type
-
-		result0 := getQualifiedTypeName(typ)
-
-		var expect0 string
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
-		}
-
-	})
-}
-
-func TestNewPackageInfo(t *testing.T) {
-	t.Run("TestNewPackageInfo_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var pkgPath string
-
-		result0 := NewPackageInfo(pkgPath)
-
-		var expect0 PackageInfo
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
-		}
-
-	})
-}
-
-func TestTestableFuncs(t *testing.T) {
-	t.Run("TestTestableFuncs_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var receiver PackageInfo
-
-		result0 := receiver.TestableFuncs()
-
-		var expect0 []FuncInfo
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
-		}
-
-	})
-}
-
-func TestAdd(t *testing.T) {
-	t.Run("TestAdd_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var receiver *PackageInfo
-		var fi *FuncInfo
-
-		receiver.Add(fi)
-
-	})
-}
-
-func TestPrintImports(t *testing.T) {
-	t.Run("TestPrintImports_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		var receiver PackageInfo
-
-		result0 := receiver.PrintImports()
-
-		var expect0 string
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
-		}
-
-	})
-}
-
-func TestGetGOROOT(t *testing.T) {
-	t.Run("TestGetGOROOT_0", func(t *testing.T) {
-
-		// delete this after your implementation
-		t.Fatalf("test not implemented")
-
-		result0, result1 := getGOROOT()
-
-		var expect0 string
-		if !reflect.DeepEqual(result0, expect0) {
-			t.Errorf("Expected %v, got %v", expect0, result0)
-		}
-
-		var expect1 error
-		if !reflect.DeepEqual(result1, expect1) {
-			t.Errorf("Expected %v, got %v", expect1, result1)
-		}
-
-	})
 }
