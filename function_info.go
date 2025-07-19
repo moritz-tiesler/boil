@@ -3,20 +3,21 @@ package main
 import (
 	"fmt"
 	"go/ast"
+	"go/types"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
 )
 
 type FuncInfo struct {
-	Name          string
-	IsExported    bool
-	ReceiverType  string // Fully qualified type string
-	ReceiverShort string
-	Params        []*ParamInfo
-	Returns       []*ParamInfo // For Go, return values are also like parameters
-	ImportedFrom  string
-	HasTypeParams bool
+	Name               string
+	IsExported         bool
+	ReceiverType       string // Fully qualified type string
+	ReceiverTypeSimple string
+	Params             []*ParamInfo
+	Returns            []*ParamInfo // For Go, return values are also like parameters
+	ImportedFrom       string
+	HasTypeParams      bool
 }
 
 func NewFunctionInfo(funcDecl *ast.FuncDecl, pkg *packages.Package) *FuncInfo {
@@ -25,39 +26,55 @@ func NewFunctionInfo(funcDecl *ast.FuncDecl, pkg *packages.Package) *FuncInfo {
 		Name: funcDecl.Name.Name,
 	}
 
-	// check if func has receiver
-	if funcDecl.Recv != nil && len(funcDecl.Recv.List) > 0 {
-		recvTypeExpr := funcDecl.Recv.List[0].Type
-		if typ := pkg.TypesInfo.TypeOf(recvTypeExpr); typ != nil {
-			fInfo.ReceiverType = typ.String()
-			short := getSimplifiedTypeName(typ.String())
-			fInfo.ReceiverShort = short
-		} else {
-			fInfo.ReceiverType = "UNKNOWN_RECEIVER_TYPE"
-		}
-	}
+	fnType := pkg.TypesInfo.TypeOf(funcDecl.Name) // returns types.Signature
 
-	if tParams := funcDecl.Type.TypeParams; tParams != nil {
-		if list := tParams.List; list != nil {
-			if len(list) > 0 {
-				fInfo.HasTypeParams = true
+	// TODO: this could be an easier way to access the types
+	if sig, ok := fnType.(*types.Signature); ok {
+		if sig.Recv() != nil {
+			recVar := sig.Recv()
+			fInfo.ReceiverType = getQualifiedTypeName(recVar.Type())
+			fInfo.ReceiverTypeSimple = getSimplifiedTypeName(recVar.Type(), pkg.Types)
+		}
+
+		i := 0
+		if params := sig.Params(); params != nil {
+			for paramVar := range params.Variables() { // <--- Changed here: use Variables() and range loop
+				paramTypeName := getQualifiedTypeName(paramVar.Type())
+				paramTypeNameSimple := getSimplifiedTypeName(paramVar.Type(), pkg.Types)
+
+				paramName := paramVar.Name()
+				if paramName == "" {
+					paramName = fmt.Sprintf("param%d", i) // Provide a default name for unnamed parameters
+				}
+				fInfo.Params = append(fInfo.Params, &ParamInfo{
+					Name:           paramName,
+					TypeName:       paramTypeName,
+					TypeNameSimple: paramTypeNameSimple,
+					Pkg:            *pkg,
+				})
+				i++
 			}
 		}
-	}
-	// check params
-	if funcDecl.Type.Params != nil {
-		for _, field := range funcDecl.Type.Params.List {
-			fInfo.Params = append(fInfo.Params, NewParamInfo(field, pkg)...)
 
+		i = 0
+		if results := sig.Results(); results != nil {
+			for returnVar := range results.Variables() { // <--- Changed here: use Variables() and range loop
+				returnTypeName := getQualifiedTypeName(returnVar.Type())
+				returnTypeNameSimple := getSimplifiedTypeName(returnVar.Type(), pkg.Types)
+
+				returnName := returnVar.Name()
+				if returnName == "" {
+					returnName = fmt.Sprintf("result%d", i) // Provide a default name for unnamed results
+				}
+				fInfo.Returns = append(fInfo.Returns, &ParamInfo{
+					Name:           returnName,
+					TypeName:       returnTypeName,
+					TypeNameSimple: returnTypeNameSimple,
+					Pkg:            *pkg,
+				})
+			}
 		}
-	}
 
-	// check returns
-	if funcDecl.Type.Results != nil {
-		for _, field := range funcDecl.Type.Results.List {
-			fInfo.Returns = append(fInfo.Returns, NewParamInfo(field, pkg)...)
-
-		}
 	}
 	return &fInfo
 }
@@ -65,16 +82,11 @@ func NewFunctionInfo(funcDecl *ast.FuncDecl, pkg *packages.Package) *FuncInfo {
 func (fi FuncInfo) RequiredImports() []string {
 	var required []string
 	for _, p := range fi.Params {
-		if p.ImportedFrom != "" {
-			required = append(required, p.ImportedFrom)
-		}
-
+		required = append(required, p.Pkg.PkgPath)
 	}
-	for _, p := range fi.Returns {
-		if p.ImportedFrom != "" {
-			required = append(required, p.ImportedFrom)
-		}
 
+	for _, p := range fi.Returns {
+		required = append(required, p.Pkg.PkgPath)
 	}
 	return required
 }
@@ -111,7 +123,7 @@ func (fi FuncInfo) PrintReceiverCtor() string {
 	if fi.ReceiverType == "" {
 		return ctor
 	}
-	return fmt.Sprintf("var receiver %s", fi.ReceiverShort)
+	return fmt.Sprintf("var receiver %s", fi.ReceiverTypeSimple)
 }
 
 func (fi FuncInfo) PrintCall() string {
@@ -131,7 +143,7 @@ func (fi FuncInfo) PrintDefaultExpects() string {
 	var expects strings.Builder
 	for i, retType := range fi.Returns {
 		expectName := fmt.Sprintf("expect%d", i)
-		expectType := retType.ZeroValue
+		expectType := retType.TypeNameSimple
 		resultName := fmt.Sprintf("result%d", i)
 		s := fmt.Sprintf(tmpl, expectName, expectType, resultName, expectName, expectName, resultName)
 		expects.WriteString(s)
@@ -142,7 +154,7 @@ func (fi FuncInfo) PrintDefaultExpects() string {
 func (fi FuncInfo) PrintDefaultVarArgs() string {
 	var sb strings.Builder
 	for _, param := range fi.Params {
-		def := fmt.Sprintf("var %s %s\n", param.Name, param.ZeroValue)
+		def := fmt.Sprintf("var %s %s\n", param.Name, param.TypeNameSimple)
 		sb.WriteString(def)
 	}
 	return sb.String()
@@ -151,7 +163,7 @@ func (fi FuncInfo) PrintDefaultVarArgs() string {
 func (fi FuncInfo) PrintArgsAsStructFields() string {
 	var sb strings.Builder
 	for _, param := range fi.Params {
-		field := fmt.Sprintf("%s %s\n", param.Name, param.ZeroValue)
+		field := fmt.Sprintf("%s %s\n", param.Name, param.TypeNameSimple)
 		sb.WriteString(field)
 	}
 	return sb.String()

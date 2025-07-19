@@ -19,7 +19,9 @@ func useFmock(a fmock.Mock) bool {
 	return a.Called()
 }
 
-type Adder struct{}
+type Adder struct {
+	offset int
+}
 
 func (adder *Adder) Do(a, b int) int {
 	return add(a, b)
@@ -31,4 +33,14 @@ func createAdder() *Adder {
 
 func callAdder(addr *Adder, a, b int) int {
 	return addr.Do(a, b)
+}
+
+func NewAdder(offset int) *Adder {
+	return &Adder{offset: offset}
+}
+
+func NewAdders(offset int) []*Adder {
+	var adders []*Adder
+	adders = append(adders, &Adder{offset: offset})
+	return adders
 }

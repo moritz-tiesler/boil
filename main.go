@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"go/types"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -128,13 +129,6 @@ func {{ .Name }}(t *testing.T) {
 {{ end }}
 `
 
-func getSimplifiedTypeName(qualifiedType string) string {
-	parts := strings.Split(qualifiedType, "/")
-
-	_, typeName, _ := strings.Cut(parts[len(parts)-1], ".")
-	return typeName
-}
-
 func extractPackagePrefix(typeName string) (string, string, string) {
 	typeName = strings.TrimPrefix(typeName, "*")
 	var prefix string
@@ -181,7 +175,7 @@ func run(asTable bool) {
 	pkgInfo := NewPackageInfo(pkgPath)
 
 	templdatas := []TestTemplateData{}
-	var genericsDetected bool
+	// var genericsDetected boolG
 	for _, fi := range pkgInfo.TestableFuncs() {
 		templData := TestTemplateData{
 			Name: fmt.Sprintf("Test%s%s",
@@ -193,17 +187,15 @@ func run(asTable bool) {
 		}
 		templdatas = append(templdatas, templData)
 
-		if fi.HasTypeParams {
-			genericsDetected = true
-		}
+		// if fi.HasTypeParams {
+		// 	genericsDetected = true
+		// }
 	}
 
 	extraImports := []string{}
 	for _, fi := range pkgInfo.Funcs {
 		for _, pi := range fi.Params {
-			if pi.ImportedFrom != "" {
-				extraImports = append(extraImports, pi.ImportedFrom)
-			}
+			extraImports = append(extraImports, pi.Pkg.PkgPath)
 		}
 	}
 	var buf bytes.Buffer
@@ -245,10 +237,10 @@ func run(asTable bool) {
 	}
 	fmt.Fprintf(os.Stdout, "Created file %s\n", outFileName)
 	fmt.Fprintf(os.Stdout, "Created %d tests\n", len(templdatas))
-	if genericsDetected {
-		fmt.Fprintf(os.Stderr, "Warning: functions use generic types, your test file will not compile.\n")
-		fmt.Fprintf(os.Stderr, "Instantiate the types to proceed.\n")
-	}
+	// if genericsDetected {
+	// 	fmt.Fprintf(os.Stderr, "Warning: functions use generic types, your test file will not compile.\n")
+	// 	fmt.Fprintf(os.Stderr, "Instantiate the types to proceed.\n")
+	// }
 	goFmt(outFileName)
 }
 
@@ -256,4 +248,54 @@ func goFmt(path string) error {
 	cmd := exec.Command("gofmt", "-w", path)
 
 	return cmd.Run()
+}
+
+func getSimplifiedTypeName(typ types.Type, targetTypesPkg *types.Package) string {
+	switch t := typ.(type) {
+	case *types.Named:
+		if t.Obj().Pkg() == targetTypesPkg {
+			return t.Obj().Name()
+		}
+		obj := t.Obj()
+		pkg := obj.Pkg()
+		if pkg != nil {
+			return pkg.Name() + "." + obj.Name()
+		} else {
+			return obj.Name()
+		}
+	case *types.Pointer:
+		return "*" + getSimplifiedTypeName(t.Elem(), targetTypesPkg)
+	case *types.Slice:
+		return "[]" + getSimplifiedTypeName(t.Elem(), targetTypesPkg)
+	case *types.Array:
+		return fmt.Sprintf("[%d]%s", t.Len(), getSimplifiedTypeName(t.Elem(), targetTypesPkg))
+	case *types.Map:
+		return fmt.Sprintf("map[%s]%s",
+			getSimplifiedTypeName(t.Key(), targetTypesPkg),
+			getSimplifiedTypeName(t.Elem(), targetTypesPkg),
+		)
+	case *types.Chan:
+		dir := ""
+		switch t.Dir() {
+		case types.SendRecv:
+			dir = "chan "
+		case types.SendOnly:
+			dir = "chan <- "
+		case types.RecvOnly:
+			dir = "<- chan "
+		}
+		return dir + getSimplifiedTypeName(t.Elem(), targetTypesPkg)
+	case *types.Signature:
+		return t.String()
+	case *types.Struct:
+		return t.String()
+	case *types.Basic:
+		return t.Name()
+	default:
+		return t.String()
+	}
+}
+
+func getQualifiedTypeName(typ types.Type) string {
+	return typ.String()
 }
